@@ -1,0 +1,100 @@
+on: [push, pull_request]
+
+name: CI
+
+jobs:
+  check:
+    name: unit tests
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        rust: [ stable, beta, nightly ]
+        os: [ ubuntu-latest, macos-latest, windows-latest ]
+    steps:
+      - uses: actions/checkout@v2
+        name: git checkout
+
+      - uses: actions-rs/toolchain@v1
+        name: install toolchain
+        with:
+          profile: minimal
+          toolchain: ${{ matrix.rust }}
+
+      - uses: Swatinem/rust-cache@v1
+        name: caching
+
+      - uses: actions-rs/cargo@v1
+        name: cargo check
+        with:
+          command: check
+
+      - uses: actions-rs/cargo@v1
+        name: cargo clippy
+        with:
+          command: clippy
+          args: --all-features --all-targets -- -D warnings
+
+      - uses: actions-rs/cargo@v1
+        name: cargo test
+        with:
+          command: test
+
+  deny:
+    name: cargo deny
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v2
+        name: git checkout
+
+      - uses: actions-rs/toolchain@v1
+        name: install toolchain
+        with:
+          profile: minimal
+          toolchain: stable
+
+      - uses: actions-rs/cargo@v1
+        name: install cargo deny
+        with:
+          command: install
+          args: cargo-deny
+
+      - uses: actions-rs/cargo@v1
+        name: cargo deny
+        with:
+          command: deny
+          args: check
+
+  coverage:
+    name: coverage testing
+    runs-on: ubuntu-20.04
+    steps:
+      - uses: actions/checkout@v2
+
+      - uses: actions-rs/toolchain@v1
+        name: install toolchain
+        with:
+          profile: minimal
+          toolchain: stable
+
+      - uses: Swatinem/rust-cache@v1
+        with:
+          key: "coverage"
+
+      - uses: actions-rs/cargo@v1
+        name: cargo test
+        with:
+          command: test
+
+      - name: install kcov
+        uses: ryankurte/action-apt@v0.2.0
+        with:
+          packages: "kcov"
+
+      - name: generate kcov report
+        shell: bash
+        run: |
+          for file in target/debug/deps/at2-node-*; do [ -x "${file}" ] || continue; mkdir -p "target/cov/$(basename $file)"; kcov --exclude-pattern=/.cargo,/usr/lib --verify "target/cov/$(basename $file)" "$file"; done
+
+      - name: upload coverage
+        uses: codecov/codecov-action@v1
