@@ -1,1 +1,3 @@
-/target
+# generated
+/Cargo.lock
+/target/

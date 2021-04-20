@@ -1,0 +1,15 @@
+syntax = "proto3";
+package at2;
+
+service AT2 {
+	rpc SendMoney (SendMoneyRequest) returns (SendMoneyReply);
+}
+
+message SendMoneyRequest {
+	bytes receiver = 1;
+	uint32 amount = 2;
+}
+
+message SendMoneyReply {
+	bytes request_id = 1;
+}
