@@ -1,6 +1,6 @@
 use std::{
     env, io,
-    net::{Ipv4Addr, SocketAddr, SocketAddrV4},
+    net::{Ipv4Addr, SocketAddr},
     path::PathBuf,
     time::Duration,
 };
@@ -46,7 +46,7 @@ async fn start_server(ip: &SocketAddr) -> duct::Handle {
 
 #[tokio::test]
 async fn can_run_server() {
-    let ip = SocketAddr::V4(SocketAddrV4::new(Ipv4Addr::new(127, 0, 0, 1), 3000));
+    let ip: SocketAddr = (Ipv4Addr::new(127, 0, 0, 1), 3000).into();
     let server = start_server(&ip).await;
 
     server.kill().expect("kill server");
