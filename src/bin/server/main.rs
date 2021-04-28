@@ -1,8 +1,6 @@
-use std::{
-    io::{self, Read},
-    net::SocketAddr,
-    process,
-};
+use std::io::{self, Read};
+use std::net::SocketAddr;
+use std::process;
 
 use snafu::{ResultExt, Snafu};
 use structopt::StructOpt;
