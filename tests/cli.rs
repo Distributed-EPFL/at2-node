@@ -1,8 +1,7 @@
-use std::{
-    env, io,
-    net::{Ipv4Addr, SocketAddr},
-    time::Duration,
-};
+use std::env;
+use std::io;
+use std::net::{Ipv4Addr, SocketAddr};
+use std::time::Duration;
 use tokio::{net::TcpStream, time::sleep};
 
 use duct::cmd;
