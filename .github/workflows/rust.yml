@@ -8,8 +8,8 @@ jobs:
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
-        rust: [ stable, beta, nightly ]
-        os: [ ubuntu-latest, macos-latest, windows-latest ]
+        rust: [stable, beta, nightly]
+        os: [ubuntu-latest, macos-latest, windows-latest]
     steps:
       - uses: actions/checkout@v2
         name: git checkout
@@ -91,10 +91,16 @@ jobs:
         with:
           packages: "kcov"
 
-      - name: generate kcov report
-        shell: bash
-        run: |
-          for file in target/debug/deps/at2-node-*; do [ -x "${file}" ] || continue; mkdir -p "target/cov/$(basename $file)"; kcov --exclude-pattern=/.cargo,/usr/lib --verify "target/cov/$(basename $file)" "$file"; done
+      - uses: actions-rs/cargo@v1
+        name: install cargo kcov
+        with:
+          command: install
+          args: cargo-kcov
+
+      - uses: actions-rs/cargo@v1
+        name: cargo kcov
+        with:
+          command: kcov
 
       - name: upload coverage
         uses: codecov/codecov-action@v1
