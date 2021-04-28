@@ -59,7 +59,7 @@ async fn run() -> Result<(), Error> {
     Ok(())
 }
 
-#[tokio::main]
+#[tokio::main(flavor = "multi_thread")]
 async fn main() {
     let ret = match Commands::from_args() {
         Commands::Config(cmd) => config(cmd),
