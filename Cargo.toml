@@ -6,16 +6,16 @@ edition = "2018"
 license = "AGPL-3"
 
 [dependencies]
-serde = { version = "1.0.125", features = ["derive"] }
+serde = { version = "1", features = ["derive"] }
 snafu = "0.6"
 structopt = "0.3"
 tokio = { version = "1", features = ["macros", "net", "rt-multi-thread", "sync", "time"] }
-toml = "0.5.8"
+toml = "0.5"
 prost = "0.7"
-tonic = "0.4.2"
+tonic = "0.4"
 
 [dev-dependencies]
-duct = "0.13.5"
+duct = "0.13"
 
 [build-dependencies]
 tonic-build = "0.4"
