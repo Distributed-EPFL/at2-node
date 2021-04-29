@@ -24,6 +24,7 @@ tracing-fmt = "0.1"
 
 [dev-dependencies]
 duct = "0.13"
+nix = "0.20"
 
 [build-dependencies]
 tonic-build = "0.4"

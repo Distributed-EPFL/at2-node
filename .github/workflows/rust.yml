@@ -82,9 +82,9 @@ jobs:
           key: "coverage"
 
       - uses: actions-rs/cargo@v1
-        name: cargo test
+        name: cargo generate lockfile
         with:
-          command: test
+          command: generate-lockfile
 
       - name: install kcov
         uses: ryankurte/action-apt@v0.2.0
@@ -92,15 +92,18 @@ jobs:
           packages: "kcov"
 
       - uses: actions-rs/cargo@v1
-        name: install cargo kcov
-        with:
-          command: install
-          args: cargo-kcov
-
-      - uses: actions-rs/cargo@v1
         name: cargo kcov
         with:
           command: kcov
+          args: -- --verify --exclude-pattern=/.cargo,/usr/lib
+
+      - name: kcov subprocesses only
+        shell: bash
+        run: find target/debug/deps
+          -executable -type f -name 'cli-*' -not -name '*.so'
+          -execdir {} \;
+        env:
+          KCOV_ARGS: --verify --exclude-pattern=/.cargo,/usr/lib target/cov/cli-
 
       - name: upload coverage
         uses: codecov/codecov-action@v1
