@@ -1,10 +1,15 @@
-use std::io::{self, Read};
+use std::io;
 use std::net::SocketAddr;
 use std::process;
+
+use drop::crypto::{key::exchange, sign};
 
 use snafu::{ResultExt, Snafu};
 use structopt::StructOpt;
 use tonic::transport::Server;
+
+use tracing::{subscriber, Level};
+use tracing_fmt::FmtSubscriber;
 
 mod config;
 mod rpc;
@@ -17,44 +22,105 @@ enum Commands {
 
 #[derive(Debug, StructOpt)]
 enum CommandsConfig {
-    New { address: SocketAddr },
+    New {
+        node_address: SocketAddr,
+        rpc_address: SocketAddr,
+    },
+    AddNode {
+        address: SocketAddr,
+        public_key: exchange::PublicKey,
+    },
+    GetNode,
+}
+
+#[derive(Debug, Snafu)]
+enum RunError {
+    #[snafu(display("logging: {}", source))]
+    Logging {
+        source: tracing::dispatcher::SetGlobalDefaultError,
+    },
+    #[snafu(display("rpc: {}", source))]
+    Rpc { source: tonic::transport::Error },
 }
 
 #[derive(Debug, Snafu)]
 enum Error {
-    ConfigEncode { source: toml::ser::Error },
-    RunReadConfig { source: io::Error },
-    RunDecodeConfig { source: toml::de::Error },
-    RunServer { source: tonic::transport::Error },
+    #[snafu(display("config: {}", source))]
+    Config { source: config::Error },
+    #[snafu(display("run server: {}", source))]
+    Run { source: RunError },
 }
 
 fn config(cmd: CommandsConfig) -> Result<(), Error> {
     match cmd {
-        CommandsConfig::New { address } => {
-            let config = config::Config { address };
-            let encoded = toml::to_string_pretty(&config).context(ConfigEncode)?;
+        CommandsConfig::New {
+            node_address,
+            rpc_address,
+        } => config::Config {
+            addresses: config::ConfigAddresses {
+                node: node_address,
+                rpc: rpc_address,
+            },
+            keys: config::ConfigKeys {
+                sign: sign::KeyPair::random().secret().clone(),
+                network: exchange::KeyPair::random().into(),
+            },
+            nodes: vec![],
+        }
+        .to_writer(io::stdout())
+        .context(Config),
+        CommandsConfig::AddNode {
+            address,
+            public_key,
+        } => {
+            let mut config = config::from_reader(io::stdin()).context(Config)?;
 
-            println!("{}", encoded);
+            config.nodes.push(config::Node {
+                address,
+                public_key,
+            });
 
-            Ok(())
+            config.to_writer(io::stdout()).context(Config)
+        }
+        CommandsConfig::GetNode => {
+            let config = config::from_reader(io::stdin()).context(Config)?;
+
+            config::Nodes {
+                nodes: vec![config::Node {
+                    address: config.addresses.node,
+                    public_key: config.keys.network.public,
+                }],
+            }
+            .to_writer(io::stdout())
+            .context(Config)
         }
     }
 }
 
 async fn run() -> Result<(), Error> {
-    let mut buffer = String::new();
-    io::stdin()
-        .read_to_string(&mut buffer)
-        .context(RunReadConfig)?;
-    let config: config::Config = toml::from_str(&buffer).context(RunDecodeConfig)?;
+    let config = config::from_reader(io::stdin()).context(Config)?;
 
-    let service = rpc::Service::default();
+    let subscriber = FmtSubscriber::builder()
+        .with_max_level(Level::TRACE)
+        .finish();
+    subscriber::set_global_default(subscriber)
+        .context(Logging)
+        .context(Run)?;
+
+    let service = rpc::Service::new(
+        config.addresses.node,
+        config.keys.network.into(),
+        config.keys.sign.into(),
+        config.nodes,
+    )
+    .await;
 
     Server::builder()
         .add_service(rpc::At2Server::new(service))
-        .serve(config.address)
+        .serve(config.addresses.rpc)
         .await
-        .context(RunServer)?;
+        .context(Rpc)
+        .context(Run)?;
 
     Ok(())
 }

@@ -6,13 +6,21 @@ edition = "2018"
 license = "AGPL-3"
 
 [dependencies]
+drop = { git = "https://github.com/Distributed-EPFL/drop.git" }
+murmur = { git = "https://github.com/Distributed-EPFL/murmur.git" }
+sieve = { git = "https://github.com/Distributed-EPFL/sieve.git" }
+futures = "0.3"
+num_cpus = "1.13"
 prost = "0.7"
 serde = { version = "1", features = ["derive"] }
+serde_str = "0.1"
 snafu = "0.6"
 structopt = "0.3"
 tokio = { version = "1", features = ["macros", "net", "rt-multi-thread", "sync", "time"] }
 toml = "0.5"
 tonic = "0.4"
+tracing = "0.1"
+tracing-fmt = "0.1"
 
 [dev-dependencies]
 duct = "0.13"
