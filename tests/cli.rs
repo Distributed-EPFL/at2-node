@@ -6,9 +6,11 @@ use std::sync::atomic::{AtomicU16, AtomicU8, Ordering};
 use std::time::{Duration, Instant};
 use std::{env, fs, io};
 use tokio::{net::TcpStream, task::yield_now};
+use url::Url;
 
 use duct::cmd;
 
+const CLIENT_BIN: &str = env!("CARGO_BIN_EXE_client");
 const SERVER_BIN: &str = env!("CARGO_BIN_EXE_server");
 const CRATE_ROOT: &str = env!("CARGO_MANIFEST_DIR");
 
@@ -149,7 +151,7 @@ async fn server_started_twice_fails() {
     assert_eq!(exit.err().map(|err| err.kind()), Some(io::ErrorKind::Other))
 }
 
-async fn start_network(size: usize) -> SocketAddr {
+async fn start_network(size: usize) -> (Vec<Server>, Url) {
     let addresses = repeat_with(|| (next_test_ip4(), next_test_ip4()))
         .take(size)
         .collect::<Vec<_>>();
@@ -186,15 +188,34 @@ async fn start_network(size: usize) -> SocketAddr {
     }))
     .await;
 
-    addresses
+    let rpc = addresses
         .iter()
         .map(|(_, rpc)| rpc)
         .copied()
         .next()
-        .expect("zero sized network")
+        .map(|addr| Url::parse(&format!("http://{}", addr)).expect("format as URL"))
+        .expect("zero sized network");
+
+    (servers, rpc)
 }
 
 #[tokio::test]
 async fn can_run_network() {
     start_network(3).await;
+}
+
+#[tokio::test]
+async fn can_send_message_on_network() {
+    // _servers should be drop only at the end of scope
+    let (_servers, rpc) = start_network(3).await;
+
+    let recipient = cmd!(CLIENT_BIN, "config", "new", rpc.to_string())
+        .pipe(cmd!(CLIENT_BIN, "config", "get-public-key"))
+        .read()
+        .expect("recipient public key");
+
+    cmd!(CLIENT_BIN, "config", "new", rpc.to_string())
+        .pipe(cmd!(CLIENT_BIN, "send-asset", recipient, "10"))
+        .run()
+        .expect("send asset");
 }

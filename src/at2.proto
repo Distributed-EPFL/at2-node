@@ -5,11 +5,17 @@ service AT2 {
 	rpc SendAsset (SendAssetRequest) returns (SendAssetReply);
 }
 
-message SendAssetRequest {
-	bytes receiver = 1;
-	uint32 amount = 2;
+message Transaction {
+	// sender is already present in wrapping message
+	bytes recipient = 1;
+	uint64 amount = 2;
 }
 
-message SendAssetReply {
-	bytes request_id = 1;
+message SendAssetRequest {
+	bytes sender = 1;
+	uint32 sequence = 2;
+	Transaction transaction = 3;
+	bytes signature = 4;
 }
+
+message SendAssetReply {}
