@@ -4,6 +4,8 @@ use std::process;
 
 use drop::crypto::{key::exchange, sign};
 
+use at2_node::proto;
+
 use snafu::{ResultExt, Snafu};
 use structopt::StructOpt;
 use tonic::transport::Server;
@@ -36,7 +38,7 @@ enum RunError {
         source: tracing::dispatcher::SetGlobalDefaultError,
     },
     #[snafu(display("service: {}", source))]
-    Service { source: drop::net::ListenerError },
+    Service { source: rpc::Error },
     #[snafu(display("rpc: {}", source))]
     Rpc { source: tonic::transport::Error },
 }
@@ -103,7 +105,7 @@ async fn run() -> Result<(), Error> {
     .context(Run)?;
 
     Server::builder()
-        .add_service(rpc::At2Server::new(service))
+        .add_service(proto::At2Server::new(service))
         .serve(config.addresses.rpc)
         .await
         .context(Rpc)

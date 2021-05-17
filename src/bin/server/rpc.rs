@@ -1,24 +1,38 @@
+use std::convert::From;
 use std::net::SocketAddr;
 
 use drop::crypto::key::exchange::{self, Exchanger};
 use drop::crypto::sign;
-use drop::net::ListenerError;
 use drop::net::{ConnectorExt, TcpConnector, TcpListener};
-use drop::system::{AllSampler, NetworkSender, System, SystemManager};
+use drop::system::{AllSampler, Handle, NetworkSender, System, SystemManager};
 use murmur::MurmurConfig;
 use sieve::{self, Sieve, SieveConfig, SieveMessage};
 
+use at2_node::proto;
+
+use snafu::{OptionExt, ResultExt, Snafu};
 use tonic::Response;
 
-tonic::include_proto!("at2");
+#[derive(Snafu, Debug)]
+pub enum SendAssetError {
+    #[snafu(display("invalid request"))]
+    InvalidRequest,
+    #[snafu(display("invalid serialization: {}", source))]
+    InvalidSerialization { source: bincode::Error },
+}
 
-use at2_server::At2;
-pub use at2_server::At2Server;
+#[derive(Snafu, Debug)]
+pub enum Error {
+    #[snafu(display("new service: {}", source))]
+    ServiceNew { source: drop::net::ListenerError },
+    #[snafu(display("service: send asset: {}", source))]
+    ServiceSendAsset { source: SendAssetError },
+}
 
-type M = u64;
+type M = at2_node::Transaction;
 
 pub struct Service {
-    _handle: sieve::SieveHandle<M, NetworkSender<SieveMessage<M>>, sieve::Fixed>,
+    handle: sieve::SieveHandle<M, NetworkSender<SieveMessage<M>>, sieve::Fixed>,
 }
 
 use super::config;
@@ -29,10 +43,12 @@ impl Service {
         network_keypair: exchange::KeyPair,
         sign_keypair: sign::KeyPair,
         network: Vec<config::Node>,
-    ) -> Result<Self, ListenerError> {
+    ) -> Result<Self, Error> {
         let exchanger = Exchanger::new(network_keypair);
 
-        let listener = TcpListener::new(listener_addr, exchanger.clone()).await?;
+        let listener = TcpListener::new(listener_addr, exchanger.clone())
+            .await
+            .context(ServiceNew)?;
 
         let (addrs, keys): (Vec<_>, Vec<_>) = network
             .iter()
@@ -62,7 +78,7 @@ impl Service {
 
         // TODO log errors from manager
         Ok(Self {
-            _handle: manager
+            handle: manager
                 .run(sieve, sampler, num_cpus::get())
                 .await
                 .processor_handle(),
@@ -70,12 +86,37 @@ impl Service {
     }
 }
 
+impl From<SendAssetError> for tonic::Status {
+    fn from(error: SendAssetError) -> Self {
+        Self::invalid_argument(error.to_string())
+    }
+}
+
 #[tonic::async_trait]
-impl At2 for Service {
+impl proto::At2 for Service {
     async fn send_asset(
         &self,
-        _request: tonic::Request<SendAssetRequest>,
-    ) -> Result<tonic::Response<SendAssetReply>, tonic::Status> {
-        Ok(Response::new(SendAssetReply { request_id: vec![] }))
+        request: tonic::Request<proto::SendAssetRequest>,
+    ) -> Result<tonic::Response<proto::SendAssetReply>, tonic::Status> {
+        let message = request.into_inner();
+        let request_transaction = message.transaction.context(InvalidRequest)?;
+
+        let transaction = at2_node::Transaction {
+            recipient: bincode::deserialize(&request_transaction.recipient)
+                .context(InvalidSerialization)?,
+            amount: request_transaction.amount,
+        };
+
+        let sender = bincode::deserialize(&message.sender).context(InvalidSerialization)?;
+        let signature = bincode::deserialize(&message.signature).context(InvalidSerialization)?;
+        let payload = sieve::Payload::new(sender, message.sequence, transaction, signature);
+
+        self.handle
+            .clone()
+            .broadcast(&payload)
+            .await
+            .expect("broadcasting failed");
+
+        Ok(Response::new(proto::SendAssetReply {}))
     }
 }
