@@ -2,6 +2,7 @@ use std::net::SocketAddr;
 
 use drop::crypto::key::exchange::{self, Exchanger};
 use drop::crypto::sign;
+use drop::net::ListenerError;
 use drop::net::{ConnectorExt, TcpConnector, TcpListener};
 use drop::system::manager::{Handle, SystemManager};
 use drop::system::sampler::AllSampler;
@@ -31,12 +32,10 @@ impl Service {
         network_keypair: exchange::KeyPair,
         sign_keypair: sign::KeyPair,
         network: Vec<config::Node>,
-    ) -> Self {
+    ) -> Result<Self, ListenerError> {
         let exchanger = Exchanger::new(network_keypair);
 
-        let listener = TcpListener::new(listener_addr, exchanger.clone())
-            .await
-            .expect("failed to listen for incoming connections");
+        let listener = TcpListener::new(listener_addr, exchanger.clone()).await?;
 
         let (addrs, keys): (Vec<_>, Vec<_>) = network
             .iter()
@@ -63,12 +62,12 @@ impl Service {
 
         let sampler = AllSampler::default();
 
-        Self {
+        Ok(Self {
             handle: manager
                 .run(sieve, sampler, num_cpus::get())
                 .await
                 .processor_handle(),
-        }
+        })
     }
 }
 

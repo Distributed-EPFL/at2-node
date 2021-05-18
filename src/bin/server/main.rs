@@ -39,6 +39,8 @@ enum RunError {
     Logging {
         source: tracing::dispatcher::SetGlobalDefaultError,
     },
+    #[snafu(display("service: {}", source))]
+    Service { source: drop::net::ListenerError },
     #[snafu(display("rpc: {}", source))]
     Rpc { source: tonic::transport::Error },
 }
@@ -113,7 +115,9 @@ async fn run() -> Result<(), Error> {
         config.keys.sign.into(),
         config.nodes,
     )
-    .await;
+    .await
+    .context(Service)
+    .context(Run)?;
 
     Server::builder()
         .add_service(rpc::At2Server::new(service))
