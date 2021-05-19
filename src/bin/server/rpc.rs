@@ -42,6 +42,7 @@ impl Service {
             .map(|node| (node.address, node.public_key))
             .unzip();
         let connector = TcpConnector::new(exchanger).retry();
+        // TODO readd connections if dropped
         let mut system = System::new_with_connector(&connector, keys, addrs).await;
 
         let _ = system.add_listener(listener).await;
@@ -62,6 +63,7 @@ impl Service {
 
         let sampler = AllSampler::default();
 
+        // TODO log errors from manager
         Ok(Self {
             handle: manager
                 .run(sieve, sampler, num_cpus::get())
