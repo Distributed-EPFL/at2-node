@@ -4,10 +4,7 @@ use drop::crypto::key::exchange::{self, Exchanger};
 use drop::crypto::sign;
 use drop::net::ListenerError;
 use drop::net::{ConnectorExt, TcpConnector, TcpListener};
-use drop::system::manager::{Handle, SystemManager};
-use drop::system::sampler::AllSampler;
-use drop::system::sender::NetworkSender;
-use drop::system::System;
+use drop::system::{AllSampler, Handle, NetworkSender, System, SystemManager};
 use murmur::MurmurConfig;
 use sieve::{self, Sieve, SieveConfig, SieveMessage};
 
