@@ -5,12 +5,12 @@
 
 An implementation of a distributed ledger using
 [AT2](https://arxiv.org/abs/1812.10844) (Asynchronous Trustworthy Transfers).
-It allows to send money to a chosen identity provided that you have enough in
-your account, while being byzantine resistant.
+It you allows to send money to a chosen identity provided that you have enough
+in your account, while being byzantine resistant.
 
 ## overview
 
-There is two binaries, one for the server and one for the client, both in rust.
+There are two binaries, one for the server and one for the client, both in rust.
 You can install both with `cargo install --path .`.
 
 ### server
