@@ -5,8 +5,8 @@
 
 An implementation of a distributed ledger using
 [AT2](https://arxiv.org/abs/1812.10844) (Asynchronous Trustworthy Transfers).
-It you allows to send money to a chosen identity provided that you have enough
-in your account, while being byzantine resistant.
+It you allows to send a certain amount of an asset to a chosen identity
+provided that you have enough in your account, while being byzantine resistant.
 
 ## overview
 
@@ -38,8 +38,8 @@ client config new http://127.0.0.1:3001 > client-config
 # get the recipient public key
 recipient=0123456789abcdef
 
-# send some money
-client send-money $recipient 99 < client-config
+# send some asset
+client send-asset $recipient 99 < client-config
 ```
 
 ## roadmap

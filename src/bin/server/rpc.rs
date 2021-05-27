@@ -72,10 +72,10 @@ impl Service {
 
 #[tonic::async_trait]
 impl At2 for Service {
-    async fn send_money(
+    async fn send_asset(
         &self,
-        _request: tonic::Request<SendMoneyRequest>,
-    ) -> Result<tonic::Response<SendMoneyReply>, tonic::Status> {
+        _request: tonic::Request<SendAssetRequest>,
+    ) -> Result<tonic::Response<SendAssetReply>, tonic::Status> {
         // TODO by the client
         let sign_keypair = sign::KeyPair::random();
         let mut signer = sign::Signer::new(sign_keypair.clone());
@@ -89,7 +89,7 @@ impl At2 for Service {
             .await
             .expect("broadcasting failed");
 
-        let reply = SendMoneyReply { request_id: vec![] };
+        let reply = SendAssetReply { request_id: vec![] };
         Ok(Response::new(reply))
     }
 }
