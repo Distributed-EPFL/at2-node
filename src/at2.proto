@@ -2,14 +2,14 @@ syntax = "proto3";
 package at2;
 
 service AT2 {
-	rpc SendMoney (SendMoneyRequest) returns (SendMoneyReply);
+	rpc SendAsset (SendAssetRequest) returns (SendAssetReply);
 }
 
-message SendMoneyRequest {
+message SendAssetRequest {
 	bytes receiver = 1;
 	uint32 amount = 2;
 }
 
-message SendMoneyReply {
+message SendAssetReply {
 	bytes request_id = 1;
 }
