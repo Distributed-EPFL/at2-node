@@ -26,10 +26,6 @@ enum CommandsConfig {
         node_address: SocketAddr,
         rpc_address: SocketAddr,
     },
-    AddNode {
-        address: SocketAddr,
-        public_key: exchange::PublicKey,
-    },
     GetNode,
 }
 
@@ -71,19 +67,6 @@ fn config(cmd: CommandsConfig) -> Result<(), Error> {
         }
         .to_writer(io::stdout())
         .context(Config),
-        CommandsConfig::AddNode {
-            address,
-            public_key,
-        } => {
-            let mut config = config::from_reader(io::stdin()).context(Config)?;
-
-            config.nodes.push(config::Node {
-                address,
-                public_key,
-            });
-
-            config.to_writer(io::stdout()).context(Config)
-        }
         CommandsConfig::GetNode => {
             let config = config::from_reader(io::stdin()).context(Config)?;
 
