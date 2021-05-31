@@ -13,6 +13,8 @@ provided that you have enough in your account, while being byzantine resistant.
 There are two binaries, one for the server and one for the client, both in rust.
 You can install both with `cargo install --path .`.
 
+You can find more technical informations in [`technical.md`](technical.md).
+
 ### server
 
 ```bash

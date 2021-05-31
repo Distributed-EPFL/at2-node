@@ -16,4 +16,5 @@ previous one.
 
 ## RPC
 
-The node exposes a gRPC service as described in the `src/at2.proto` file.
+The node exposes a gRPC service as described in the
+[`src/at2.proto`](src/at2.proto) file.
