@@ -4,7 +4,7 @@ use drop::crypto::key::exchange::{self, Exchanger};
 use drop::crypto::sign;
 use drop::net::ListenerError;
 use drop::net::{ConnectorExt, TcpConnector, TcpListener};
-use drop::system::{AllSampler, Handle, NetworkSender, System, SystemManager};
+use drop::system::{AllSampler, NetworkSender, System, SystemManager};
 use murmur::MurmurConfig;
 use sieve::{self, Sieve, SieveConfig, SieveMessage};
 
@@ -18,7 +18,7 @@ pub use at2_server::At2Server;
 type M = u64;
 
 pub struct Service {
-    handle: sieve::SieveHandle<M, NetworkSender<SieveMessage<M>>, sieve::Fixed>,
+    _handle: sieve::SieveHandle<M, NetworkSender<SieveMessage<M>>, sieve::Fixed>,
 }
 
 use super::config;
@@ -62,7 +62,7 @@ impl Service {
 
         // TODO log errors from manager
         Ok(Self {
-            handle: manager
+            _handle: manager
                 .run(sieve, sampler, num_cpus::get())
                 .await
                 .processor_handle(),
@@ -76,20 +76,6 @@ impl At2 for Service {
         &self,
         _request: tonic::Request<SendAssetRequest>,
     ) -> Result<tonic::Response<SendAssetReply>, tonic::Status> {
-        // TODO by the client
-        let sign_keypair = sign::KeyPair::random();
-        let mut signer = sign::Signer::new(sign_keypair.clone());
-        let message: u64 = 0;
-        let signature = signer.sign(&message).expect("sign failed");
-        let payload = sieve::Payload::new(*sign_keypair.public(), 0, message, signature);
-
-        self.handle
-            .clone()
-            .broadcast(&payload)
-            .await
-            .expect("broadcasting failed");
-
-        let reply = SendAssetReply { request_id: vec![] };
-        Ok(Response::new(reply))
+        Ok(Response::new(SendAssetReply { request_id: vec![] }))
     }
 }
