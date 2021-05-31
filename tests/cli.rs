@@ -136,6 +136,19 @@ async fn server_without_network_fails() {
     assert_eq!(exit.err().map(|err| err.kind()), Some(io::ErrorKind::Other))
 }
 
+#[tokio::test]
+async fn server_started_twice_fails() {
+    let (node, rpc) = (next_test_ip4(), next_test_ip4());
+
+    let (server_config, _) = gen_config(&node, &rpc);
+
+    start_server(server_config.clone());
+    let second_server = start_server(server_config);
+
+    let exit = second_server.handle.wait();
+    assert_eq!(exit.err().map(|err| err.kind()), Some(io::ErrorKind::Other))
+}
+
 async fn start_network(size: usize) -> SocketAddr {
     let addresses = repeat_with(|| (next_test_ip4(), next_test_ip4()))
         .take(size)
