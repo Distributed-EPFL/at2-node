@@ -59,10 +59,10 @@ impl Drop for Server {
 type ServerConfig = Vec<u8>;
 type NodeConfig = Vec<u8>;
 
-fn gen_server_cmd(server_args: Vec<&str>) -> duct::Expression {
+fn gen_cmd(binary: &str, binary_args: Vec<&str>) -> duct::Expression {
     let kcov_args_env = env::var("KCOV_ARGS");
     if kcov_args_env.is_err() {
-        return cmd(SERVER_BIN, server_args);
+        return cmd(binary, binary_args);
     }
     let kcov_args = kcov_args_env.unwrap();
 
@@ -78,10 +78,18 @@ fn gen_server_cmd(server_args: Vec<&str>) -> duct::Expression {
     fs::create_dir(&outdir).expect("create output dir");
     args.push(outdir.to_str().unwrap().to_string());
 
-    args.push(SERVER_BIN.into());
-    args.extend(server_args.iter().map(|a| a.to_string()));
+    args.push(binary.into());
+    args.extend(binary_args.iter().map(|a| a.to_string()));
 
     cmd("kcov", &args)
+}
+
+fn gen_server_cmd(server_args: Vec<&str>) -> duct::Expression {
+    gen_cmd(SERVER_BIN, server_args)
+}
+
+fn gen_client_cmd(client_args: Vec<&str>) -> duct::Expression {
+    gen_cmd(CLIENT_BIN, client_args)
 }
 
 fn gen_config(node: &SocketAddr, rpc: &SocketAddr) -> (ServerConfig, NodeConfig) {
@@ -209,13 +217,13 @@ async fn can_send_message_on_network() {
     // _servers should be drop only at the end of scope
     let (_servers, rpc) = start_network(3).await;
 
-    let recipient = cmd!(CLIENT_BIN, "config", "new", rpc.to_string())
-        .pipe(cmd!(CLIENT_BIN, "config", "get-public-key"))
+    let recipient = gen_client_cmd(vec!["config", "new", &rpc.to_string()])
+        .pipe(gen_client_cmd(vec!["config", "get-public-key"]))
         .read()
         .expect("recipient public key");
 
-    cmd!(CLIENT_BIN, "config", "new", rpc.to_string())
-        .pipe(cmd!(CLIENT_BIN, "send-asset", recipient, "10"))
+    gen_client_cmd(vec!["config", "new", &rpc.to_string()])
+        .pipe(gen_client_cmd(vec!["send-asset", &recipient, "10"]))
         .run()
         .expect("send asset");
 }
