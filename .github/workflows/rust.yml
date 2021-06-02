@@ -95,7 +95,7 @@ jobs:
         name: cargo kcov
         with:
           command: kcov
-          args: -- --verify --exclude-pattern=/.cargo,/usr/lib
+          args: -- --exclude-pattern=/.cargo,/usr/lib
 
       - name: kcov subprocesses only
         shell: bash
@@ -103,7 +103,7 @@ jobs:
           -executable -type f -name 'cli-*' -not -name '*.so'
           -execdir {} \;
         env:
-          KCOV_ARGS: --verify --exclude-pattern=/.cargo,/usr/lib target/cov/cli-
+          KCOV_ARGS: --exclude-pattern=/.cargo,/usr/lib target/cov/cli-
 
       - name: upload coverage
         uses: codecov/codecov-action@v1
