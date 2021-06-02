@@ -213,6 +213,22 @@ async fn can_run_network() {
 }
 
 #[tokio::test]
+async fn client_without_servers_fails() {
+    // servers are directly dropped
+    let (_, rpc) = start_network(2).await;
+
+    let recipient = gen_client_cmd(vec!["config", "new", &rpc.to_string()])
+        .pipe(gen_client_cmd(vec!["config", "get-public-key"]))
+        .read()
+        .expect("recipient public key");
+
+    gen_client_cmd(vec!["config", "new", &rpc.to_string()])
+        .pipe(gen_client_cmd(vec!["send-asset", &recipient, "10"]))
+        .run()
+        .expect_err("send asset");
+}
+
+#[tokio::test]
 async fn can_send_message_on_network() {
     // _servers should be drop only at the end of scope
     let (_servers, rpc) = start_network(3).await;
