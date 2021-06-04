@@ -15,6 +15,7 @@ use tracing_fmt::FmtSubscriber;
 
 mod config;
 mod rpc;
+mod account;
 
 #[derive(Debug, StructOpt)]
 enum Commands {
