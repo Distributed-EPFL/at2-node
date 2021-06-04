@@ -136,23 +136,13 @@ async fn wait_until_connect(server: &Server, to_probe: &SocketAddr) {
 }
 
 #[tokio::test]
-async fn server_without_network_fails() {
-    let (node, rpc) = (next_test_ip4(), next_test_ip4());
-
-    let (server_config, _) = gen_config(&node, &rpc);
-
-    let server = start_server(server_config);
-    let exit = server.handle.wait();
-    assert_eq!(exit.err().map(|err| err.kind()), Some(io::ErrorKind::Other))
-}
-
-#[tokio::test]
 async fn server_started_twice_fails() {
     let (node, rpc) = (next_test_ip4(), next_test_ip4());
 
     let (server_config, _) = gen_config(&node, &rpc);
 
-    start_server(server_config.clone());
+    // let the first one drop
+    let _first_server = start_server(server_config.clone());
     let second_server = start_server(server_config);
 
     let exit = second_server.handle.wait();
