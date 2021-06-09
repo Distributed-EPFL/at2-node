@@ -4,6 +4,7 @@ use snafu::{ensure, OptionExt};
 pub enum Error {
     InconsecutiveSequence,
     Overflow,
+    Underflow,
 }
 
 pub struct Account {
@@ -19,30 +20,23 @@ impl Account {
         }
     }
 
-    pub fn credit(&self, sequence: sieve::Sequence, amount: u64) -> Result<Self, Error> {
-        self.mutate_balance(u64::checked_add, sequence, amount)
+    pub fn credit(&self, amount: u64) -> Result<Self, Error> {
+        Ok(Self {
+            last_sequence: self.last_sequence,
+            balance: self.balance.checked_add(amount).context(Overflow)?,
+        })
     }
 
     pub fn debit(&self, sequence: sieve::Sequence, amount: u64) -> Result<Self, Error> {
-        self.mutate_balance(u64::checked_sub, sequence, amount)
-    }
-
-    fn mutate_balance<F>(
-        &self,
-        mutator: F,
-        sequence: sieve::Sequence,
-        amount: u64,
-    ) -> Result<Self, Error>
-    where
-        F: FnOnce(u64, u64) -> Option<u64>,
-    {
         ensure!(self.last_sequence + 1 != sequence, InconsecutiveSequence);
-
-        let new_balance = mutator(self.balance, amount).context(Overflow)?;
 
         Ok(Self {
             last_sequence: sequence,
-            balance: new_balance,
+            balance: self.balance.checked_sub(amount).context(Underflow)?,
         })
+    }
+
+    pub fn balance(&self) -> u64 {
+        self.balance
     }
 }

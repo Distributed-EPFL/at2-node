@@ -141,7 +141,6 @@ async fn server_started_twice_fails() {
 
     let (server_config, _) = gen_config(&node, &rpc);
 
-    // let the first one drop
     let _first_server = start_server(server_config.clone());
     let second_server = start_server(server_config);
 
@@ -204,7 +203,6 @@ async fn can_run_network() {
 
 #[tokio::test]
 async fn client_without_servers_fails() {
-    // servers are directly dropped
     let (_, rpc) = start_network(2).await;
 
     let recipient = gen_client_cmd(vec!["config", "new", &rpc.to_string()])
@@ -219,17 +217,55 @@ async fn client_without_servers_fails() {
 }
 
 #[tokio::test]
-async fn can_send_message_on_network() {
-    // _servers should be drop only at the end of scope
+async fn new_client_has_some_asset() {
     let (_servers, rpc) = start_network(3).await;
 
-    let recipient = gen_client_cmd(vec!["config", "new", &rpc.to_string()])
-        .pipe(gen_client_cmd(vec!["config", "get-public-key"]))
+    let amount = gen_client_cmd(vec!["config", "new", &rpc.to_string()])
+        .pipe(gen_client_cmd(vec!["get-balance"]))
         .read()
-        .expect("recipient public key");
+        .expect("get asset")
+        .parse::<u64>()
+        .expect("parse asset amount as u64");
 
-    gen_client_cmd(vec!["config", "new", &rpc.to_string()])
-        .pipe(gen_client_cmd(vec!["send-asset", &recipient, "10"]))
+    assert!(amount > 0);
+}
+
+#[tokio::test]
+async fn can_send_asset() {
+    fn get_balance(config: String) -> u64 {
+        gen_client_cmd(vec!["get-balance"])
+            .stdin_bytes(config)
+            .read()
+            .expect("get asset")
+            .parse::<u64>()
+            .expect("parse asset amount as u64")
+    }
+
+    let (_servers, rpc) = start_network(3).await;
+
+    let first_client_config = gen_client_cmd(vec!["config", "new", &rpc.to_string()])
+        .read()
+        .expect("create first client");
+
+    let second_client_config = gen_client_cmd(vec!["config", "new", &rpc.to_string()])
+        .read()
+        .expect("create second client");
+
+    let second_client = gen_client_cmd(vec!["config", "get-public-key"])
+        .stdin_bytes(second_client_config.clone())
+        .read()
+        .expect("get public key");
+
+    gen_client_cmd(vec!["send-asset", &second_client, "10"])
+        .stdin_bytes(first_client_config.clone())
         .run()
         .expect("send asset");
+
+    // TODO confirm transaction
+    tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+
+    assert_eq!(
+        get_balance(first_client_config) + 10,
+        get_balance(second_client_config) - 10
+    );
 }

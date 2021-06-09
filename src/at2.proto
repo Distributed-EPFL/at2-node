@@ -3,6 +3,7 @@ package at2;
 
 service AT2 {
 	rpc SendAsset (SendAssetRequest) returns (SendAssetReply);
+	rpc GetBalance (GetBalanceRequest) returns (GetBalanceReply);
 }
 
 message Transaction {
@@ -17,5 +18,11 @@ message SendAssetRequest {
 	Transaction transaction = 3;
 	bytes signature = 4;
 }
-
 message SendAssetReply {}
+
+message GetBalanceRequest {
+	bytes sender = 1;
+}
+message GetBalanceReply {
+	uint64 amount = 1;
+}

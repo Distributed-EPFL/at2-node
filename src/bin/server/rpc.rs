@@ -1,4 +1,3 @@
-use std::collections::HashMap;
 use std::convert::From;
 use std::net::SocketAddr;
 
@@ -10,17 +9,32 @@ use futures::future;
 use futures::StreamExt;
 use murmur::MurmurConfig;
 use sieve::{self, Sieve, SieveConfig, SieveMessage};
+use tokio::sync::mpsc;
+use tokio::sync::oneshot;
 
-use super::account::{self, Account};
+use super::accounts::{self, Accounts};
 use super::config;
 use at2_node::proto;
 
 use snafu::{OptionExt, ResultExt, Snafu};
 use tonic::Response;
-use tracing::{info, warn};
+use tracing::warn;
 
 #[derive(Snafu, Debug)]
-pub enum SendAssetError {
+pub enum AccountsAgentError {
+    #[snafu(display("account modification: {}", source))]
+    AccountModification { source: accounts::Error },
+
+    #[snafu(display("gone on send: {}", source))]
+    GoneOnSend {
+        source: mpsc::error::SendError<accounts::Commands>,
+    },
+    #[snafu(display("gone on recv: {}", source))]
+    GoneOnRecv { source: oneshot::error::RecvError },
+}
+
+#[derive(Snafu, Debug)]
+pub enum ProtoError {
     #[snafu(display("invalid request"))]
     InvalidRequest,
     #[snafu(display("invalid serialization: {}", source))]
@@ -28,27 +42,22 @@ pub enum SendAssetError {
 }
 
 #[derive(Snafu, Debug)]
-pub enum ProcessTransactionError {
-    #[snafu(display("no such account: {}", pubkey))]
-    NoSuchAccount { pubkey: sign::PublicKey },
-    #[snafu(display("account modification: {}", source))]
-    AccountModification { source: account::Error },
-}
-
-#[derive(Snafu, Debug)]
 pub enum Error {
     #[snafu(display("new service: {}", source))]
     ServiceNew { source: drop::net::ListenerError },
-    #[snafu(display("service: send asset: {}", source))]
-    ServiceSendAsset { source: SendAssetError },
     #[snafu(display("service: process transaction: {}", source))]
-    ServiceProcessTransaction { source: ProcessTransactionError },
+    ProcessTransaction { source: AccountsAgentError },
+
+    #[snafu(display("service: send asset: {}", source))]
+    SendAsset { source: ProtoError },
 }
 
 type M = at2_node::Transaction;
 
+#[derive(Clone)]
 pub struct Service {
     handle: sieve::SieveHandle<M, NetworkSender<SieveMessage<M>>, sieve::Fixed>,
+    accounts_agent: mpsc::Sender<accounts::Commands>,
 }
 
 impl Service {
@@ -99,68 +108,75 @@ impl Service {
 
         let sampler = AllSampler::default();
 
-        let system_handle = manager.run(sieve, sampler, num_cpus::get()).await;
+        let service = Self {
+            handle: manager
+                .run(sieve, sampler, num_cpus::get())
+                .await
+                .processor_handle(),
+            accounts_agent: Accounts::new().spawn(),
+        };
+        service.spawn();
 
-        let mut handle = system_handle.processor_handle();
+        Ok(service)
+    }
+
+    fn spawn(&self) {
+        let mut service = self.clone();
 
         tokio::spawn(async move {
-            let mut accounts = HashMap::<sign::PublicKey, Account>::default();
-
             loop {
-                match handle.deliver().await {
+                match service.handle.deliver().await {
                     Err(sieve::SieveError::Channel) => break,
                     Err(err) => {
                         warn!("deliver batch: {}", err);
                         continue;
                     }
-                    Ok(batch) => batch.iter().for_each(|payload| {
-                        if let Err(err) = Self::process_payload(&mut accounts, payload)
-                            .context(ServiceProcessTransaction)
-                        {
-                            warn!("{}", err);
+                    Ok(batch) => {
+                        for payload in batch.iter() {
+                            if let Err(err) = service
+                                .process_payload(payload)
+                                .await
+                                .context(ProcessTransaction)
+                            {
+                                warn!("{}", err);
+                            }
                         }
-                    }),
+                    }
                 };
             }
         });
-
-        Ok(Self {
-            handle: system_handle.processor_handle(),
-        })
     }
 
-    fn process_payload(
-        accounts: &mut HashMap<sign::PublicKey, Account>,
+    async fn process_payload(
+        &self,
         payload: &sieve::Payload<at2_node::Transaction>,
-    ) -> Result<(), ProcessTransactionError> {
-        let transaction = payload.payload();
-        let (sender, recipient) = (*payload.sender(), transaction.recipient);
+    ) -> Result<(), AccountsAgentError> {
+        let (tx, rx) = oneshot::channel();
 
-        // TODO remove me when create_account is done
-        let initial_account = Account::new();
+        self.accounts_agent
+            .send(accounts::Commands::Transfer {
+                sender: *payload.sender(),
+                sender_sequence: payload.sequence(),
+                receiver: payload.payload().recipient,
+                amount: payload.payload().amount,
+                resp: tx,
+            })
+            .await
+            .context(GoneOnSend)?;
 
-        let sender_account = accounts.get(&sender).unwrap_or(&initial_account);
-        let recipient_account = accounts.get(&recipient).unwrap_or(&initial_account);
-
-        let new_sender_account = sender_account
-            .debit(payload.sequence(), transaction.amount)
-            .context(AccountModification)?;
-        let new_recipient_account = recipient_account
-            .credit(payload.sequence(), transaction.amount)
-            .context(AccountModification)?;
-
-        accounts.insert(sender, new_sender_account);
-        accounts.insert(recipient, new_recipient_account);
-
-        info!("{} -> {}: {}", sender, recipient, transaction.amount);
-
-        Ok(())
+        rx.await.context(GoneOnRecv)?.context(AccountModification)
     }
 }
 
-impl From<SendAssetError> for tonic::Status {
-    fn from(error: SendAssetError) -> Self {
-        Self::invalid_argument(error.to_string())
+impl From<ProtoError> for tonic::Status {
+    fn from(err: ProtoError) -> Self {
+        Self::invalid_argument(err.to_string())
+    }
+}
+
+impl From<AccountsAgentError> for tonic::Status {
+    fn from(err: AccountsAgentError) -> Self {
+        Self::invalid_argument(err.to_string())
     }
 }
 
@@ -190,5 +206,25 @@ impl proto::At2 for Service {
             .expect("broadcasting failed");
 
         Ok(Response::new(proto::SendAssetReply {}))
+    }
+
+    async fn get_balance(
+        &self,
+        request: tonic::Request<proto::GetBalanceRequest>,
+    ) -> Result<tonic::Response<proto::GetBalanceReply>, tonic::Status> {
+        let (tx, rx) = oneshot::channel();
+
+        self.accounts_agent
+            .send(accounts::Commands::GetBalance {
+                user: bincode::deserialize(&request.get_ref().sender)
+                    .context(InvalidSerialization)?,
+                resp: tx,
+            })
+            .await
+            .context(GoneOnSend)?;
+
+        Ok(Response::new(proto::GetBalanceReply {
+            amount: rx.await.context(GoneOnRecv)?.context(AccountModification)?,
+        }))
     }
 }
