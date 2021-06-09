@@ -13,9 +13,9 @@ use tonic::transport::Server;
 use tracing::{subscriber, Level};
 use tracing_fmt::FmtSubscriber;
 
+mod accounts;
 mod config;
 mod rpc;
-mod account;
 
 #[derive(Debug, StructOpt)]
 enum Commands {

@@ -17,6 +17,7 @@ enum Commands {
         recipient: sign::PublicKey,
         amount: u64,
     },
+    GetBalance,
 }
 
 #[derive(Debug, StructOpt)]
@@ -43,6 +44,8 @@ enum CommandsError {
     Config { source: config::Error },
     #[snafu(display("send asset: {}", source))]
     SendAsset { source: SendAssetError },
+    #[snafu(display("get asset: {}", source))]
+    GetBalance { source: SendAssetError },
 }
 
 fn config(cmd: CommandsConfig) -> Result<(), config::Error> {
@@ -89,6 +92,24 @@ async fn send_asset(recipient: sign::PublicKey, amount: u64) -> Result<(), SendA
     Ok(())
 }
 
+async fn get_balance() -> Result<(), SendAssetError> {
+    let config = config::from_reader(stdin()).context(ReadConfig)?;
+
+    let reply = proto::At2Client::connect(config.rpc_address.to_string())
+        .await
+        .context(Transport)?
+        .get_balance(tonic::Request::new(proto::GetBalanceRequest {
+            sender: bincode::serialize(sign::KeyPair::from(config.secret_key).public())
+                .context(Serialize)?,
+        }))
+        .await
+        .context(Rpc)?;
+
+    println!("{}", reply.get_ref().amount);
+
+    Ok(())
+}
+
 #[tokio::main(flavor = "multi_thread")]
 async fn main() {
     let ret = match Commands::from_args() {
@@ -96,6 +117,7 @@ async fn main() {
         Commands::SendAsset { recipient, amount } => {
             send_asset(recipient, amount).await.context(SendAsset)
         }
+        Commands::GetBalance => get_balance().await.context(GetBalance),
     };
 
     if let Err(err) = ret {
