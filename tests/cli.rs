@@ -141,7 +141,13 @@ async fn server_started_twice_fails() {
 
     let (server_config, _) = gen_config(&node, &rpc);
 
-    let _first_server = start_server(server_config.clone());
+    let first_server = start_server(server_config.clone());
+    join_all(vec![
+        wait_until_connect(&first_server, &node),
+        wait_until_connect(&first_server, &rpc),
+    ])
+    .await;
+
     let second_server = start_server(server_config);
 
     let exit = second_server.handle.wait();
