@@ -11,7 +11,7 @@ pub struct Config {
     #[serde(with = "serde_str")]
     pub rpc_address: Url,
     #[serde(with = "serde_str")]
-    pub secret_key: sign::SecretKey,
+    pub private_key: sign::PrivateKey,
 }
 
 #[derive(Debug, Snafu)]

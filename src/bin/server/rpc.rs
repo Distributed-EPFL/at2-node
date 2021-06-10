@@ -2,7 +2,6 @@ use std::convert::From;
 use std::net::SocketAddr;
 
 use drop::crypto::key::exchange::{self, Exchanger};
-use drop::crypto::sign;
 use drop::net::{ConnectorExt, TcpConnector, TcpListener};
 use drop::system::{AllSampler, Handle, NetworkSender, System, SystemManager};
 use futures::future;
@@ -64,7 +63,6 @@ impl Service {
     pub async fn new(
         listener_addr: SocketAddr,
         network_keypair: exchange::KeyPair,
-        sign_keypair: sign::KeyPair,
         network: Vec<config::Node>,
     ) -> Result<Self, Error> {
         let exchanger = Exchanger::new(network_keypair);
@@ -94,7 +92,6 @@ impl Service {
         let manager = SystemManager::new(system);
 
         let sieve = Sieve::new(
-            sign_keypair,
             sieve::Fixed::new_local(),
             SieveConfig {
                 sieve_sample_size: network.len(),
