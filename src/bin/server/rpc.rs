@@ -8,8 +8,6 @@ use futures::future;
 use futures::StreamExt;
 use murmur::MurmurConfig;
 use sieve::{self, Sieve, SieveConfig, SieveMessage};
-use tokio::sync::mpsc;
-use tokio::sync::oneshot;
 
 use super::accounts::{self, Accounts};
 use super::config;
@@ -18,19 +16,6 @@ use at2_node::proto;
 use snafu::{OptionExt, ResultExt, Snafu};
 use tonic::Response;
 use tracing::warn;
-
-#[derive(Snafu, Debug)]
-pub enum AccountsAgentError {
-    #[snafu(display("account modification: {}", source))]
-    AccountModification { source: accounts::Error },
-
-    #[snafu(display("gone on send: {}", source))]
-    GoneOnSend {
-        source: mpsc::error::SendError<accounts::Commands>,
-    },
-    #[snafu(display("gone on recv: {}", source))]
-    GoneOnRecv { source: oneshot::error::RecvError },
-}
 
 #[derive(Snafu, Debug)]
 pub enum ProtoError {
@@ -45,10 +30,7 @@ pub enum Error {
     #[snafu(display("new service: {}", source))]
     ServiceNew { source: drop::net::ListenerError },
     #[snafu(display("service: process transaction: {}", source))]
-    ProcessTransaction { source: AccountsAgentError },
-
-    #[snafu(display("service: send asset: {}", source))]
-    SendAsset { source: ProtoError },
+    ProcessTransaction { source: accounts::Error },
 }
 
 type M = at2_node::Transaction;
@@ -56,7 +38,7 @@ type M = at2_node::Transaction;
 #[derive(Clone)]
 pub struct Service {
     handle: sieve::SieveHandle<M, NetworkSender<SieveMessage<M>>, sieve::Fixed>,
-    accounts_agent: mpsc::Sender<accounts::Commands>,
+    accounts: Accounts,
 }
 
 impl Service {
@@ -110,7 +92,7 @@ impl Service {
                 .run(sieve, sampler, num_cpus::get())
                 .await
                 .processor_handle(),
-            accounts_agent: Accounts::new().spawn(),
+            accounts: Accounts::new(),
         };
         service.spawn();
 
@@ -147,21 +129,15 @@ impl Service {
     async fn process_payload(
         &self,
         payload: &sieve::Payload<at2_node::Transaction>,
-    ) -> Result<(), AccountsAgentError> {
-        let (tx, rx) = oneshot::channel();
-
-        self.accounts_agent
-            .send(accounts::Commands::Transfer {
-                sender: *payload.sender(),
-                sender_sequence: payload.sequence(),
-                receiver: payload.payload().recipient,
-                amount: payload.payload().amount,
-                resp: tx,
-            })
+    ) -> Result<(), accounts::Error> {
+        self.accounts
+            .transfer(
+                *payload.sender(),
+                payload.sequence(),
+                payload.payload().recipient,
+                payload.payload().amount,
+            )
             .await
-            .context(GoneOnSend)?;
-
-        rx.await.context(GoneOnRecv)?.context(AccountModification)
     }
 }
 
@@ -170,9 +146,8 @@ impl From<ProtoError> for tonic::Status {
         Self::invalid_argument(err.to_string())
     }
 }
-
-impl From<AccountsAgentError> for tonic::Status {
-    fn from(err: AccountsAgentError) -> Self {
+impl From<accounts::Error> for tonic::Status {
+    fn from(err: accounts::Error) -> Self {
         Self::invalid_argument(err.to_string())
     }
 }
@@ -186,19 +161,18 @@ impl proto::At2 for Service {
         let message = request.into_inner();
         let request_transaction = message.transaction.context(InvalidRequest)?;
 
-        let transaction = at2_node::Transaction {
-            recipient: bincode::deserialize(&request_transaction.recipient)
-                .context(InvalidSerialization)?,
-            amount: request_transaction.amount,
-        };
-
-        let sender = bincode::deserialize(&message.sender).context(InvalidSerialization)?;
-        let signature = bincode::deserialize(&message.signature).context(InvalidSerialization)?;
-        let payload = sieve::Payload::new(sender, message.sequence, transaction, signature);
-
         self.handle
             .clone()
-            .broadcast(&payload)
+            .broadcast(&sieve::Payload::new(
+                bincode::deserialize(&message.sender).context(InvalidSerialization)?,
+                message.sequence,
+                at2_node::Transaction {
+                    recipient: bincode::deserialize(&request_transaction.recipient)
+                        .context(InvalidSerialization)?,
+                    amount: request_transaction.amount,
+                },
+                bincode::deserialize(&message.signature).context(InvalidSerialization)?,
+            ))
             .await
             .expect("broadcasting failed");
 
@@ -209,19 +183,14 @@ impl proto::At2 for Service {
         &self,
         request: tonic::Request<proto::GetBalanceRequest>,
     ) -> Result<tonic::Response<proto::GetBalanceReply>, tonic::Status> {
-        let (tx, rx) = oneshot::channel();
-
-        self.accounts_agent
-            .send(accounts::Commands::GetBalance {
-                user: bincode::deserialize(&request.get_ref().sender)
-                    .context(InvalidSerialization)?,
-                resp: tx,
-            })
-            .await
-            .context(GoneOnSend)?;
-
         Ok(Response::new(proto::GetBalanceReply {
-            amount: rx.await.context(GoneOnRecv)?.context(AccountModification)?,
+            amount: self
+                .accounts
+                .get_balance(
+                    bincode::deserialize(&request.get_ref().sender)
+                        .context(InvalidSerialization)?,
+                )
+                .await?,
         }))
     }
 }
