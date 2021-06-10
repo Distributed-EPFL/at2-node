@@ -52,13 +52,13 @@ fn config(cmd: CommandsConfig) -> Result<(), config::Error> {
     match cmd {
         CommandsConfig::New { rpc_address } => config::Config {
             rpc_address,
-            secret_key: sign::KeyPair::random().secret().clone(),
+            private_key: sign::KeyPair::random().private(),
         }
         .to_writer(stdout()),
         CommandsConfig::GetPublicKey => {
             let config = config::from_reader(stdin())?;
 
-            println!("{}", sign::KeyPair::from(config.secret_key).public());
+            println!("{}", sign::KeyPair::from(config.private_key).public());
 
             Ok(())
         }
@@ -68,17 +68,16 @@ fn config(cmd: CommandsConfig) -> Result<(), config::Error> {
 async fn send_asset(recipient: sign::PublicKey, amount: u64) -> Result<(), SendAssetError> {
     let config = config::from_reader(stdin()).context(ReadConfig)?;
 
-    let sign_keypair = sign::KeyPair::from(config.secret_key);
-    let mut signer = sign::Signer::new(sign_keypair.clone());
+    let sign_keypair = sign::KeyPair::from(config.private_key);
     let message = Transaction { recipient, amount };
-    let signature = signer.sign(&message).expect("sign failed");
+    let signature = sign_keypair.sign(&message).expect("sign failed");
 
     let mut client = proto::At2Client::connect(config.rpc_address.to_string())
         .await
         .context(Transport)?;
 
     let request = tonic::Request::new(proto::SendAssetRequest {
-        sender: bincode::serialize(sign_keypair.public()).context(Serialize)?,
+        sender: bincode::serialize(&sign_keypair.public()).context(Serialize)?,
         transaction: Some(proto::Transaction {
             recipient: bincode::serialize(&recipient).context(Serialize)?,
             amount,
@@ -99,7 +98,7 @@ async fn get_balance() -> Result<(), SendAssetError> {
         .await
         .context(Transport)?
         .get_balance(tonic::Request::new(proto::GetBalanceRequest {
-            sender: bincode::serialize(sign::KeyPair::from(config.secret_key).public())
+            sender: bincode::serialize(&sign::KeyPair::from(config.private_key).public())
                 .context(Serialize)?,
         }))
         .await

@@ -11,19 +11,19 @@ pub struct ConfigAddresses {
     pub rpc: SocketAddr,
 }
 
-// TODO remove when exchange::SecretKey can be used to generate exchange::PublicKey
+// TODO remove when exchange::PrivateKey can be used to generate exchange::PublicKey
 #[derive(serde::Deserialize, serde::Serialize)]
 pub struct ConfigKeysNetwork {
     #[serde(with = "serde_str")]
     pub public: exchange::PublicKey,
     #[serde(with = "serde_str")]
-    pub secret: exchange::SecretKey,
+    pub private: exchange::PrivateKey,
 }
 
 #[derive(serde::Deserialize, serde::Serialize)]
 pub struct ConfigKeys {
     #[serde(with = "serde_str")]
-    pub sign: sign::SecretKey,
+    pub sign: sign::PrivateKey,
     pub network: ConfigKeysNetwork,
 }
 
@@ -40,14 +40,14 @@ impl From<exchange::KeyPair> for ConfigKeysNetwork {
     fn from(keypair: exchange::KeyPair) -> Self {
         Self {
             public: *keypair.public(),
-            secret: keypair.secret().clone(),
+            private: keypair.secret().clone(),
         }
     }
 }
 
 impl From<ConfigKeysNetwork> for exchange::KeyPair {
     fn from(config: ConfigKeysNetwork) -> Self {
-        exchange::KeyPair::new(config.secret, config.public)
+        exchange::KeyPair::new(config.private, config.public)
     }
 }
 

@@ -63,7 +63,7 @@ fn config(cmd: CommandsConfig) -> Result<(), Error> {
                 rpc: rpc_address,
             },
             keys: config::ConfigKeys {
-                sign: sign::KeyPair::random().secret().clone(),
+                sign: sign::KeyPair::random().private(),
                 network: exchange::KeyPair::random().into(),
             },
             nodes: vec![],
@@ -98,7 +98,6 @@ async fn run() -> Result<(), Error> {
     let service = rpc::Service::new(
         config.addresses.node,
         config.keys.network.into(),
-        config.keys.sign.into(),
         config.nodes,
     )
     .await
