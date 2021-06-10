@@ -10,14 +10,23 @@ use account::Account;
 
 #[derive(snafu::Snafu, Debug)]
 pub enum Error {
-    NoSuchAccount { pubkey: sign::PublicKey },
-    AccountModification { source: account::Error },
+    NoSuchAccount {
+        pubkey: sign::PublicKey,
+    },
+    AccountModification {
+        source: account::Error,
+    },
+
+    #[snafu(display("gone on send"))]
+    GoneOnSend,
+    #[snafu(display("gone on recv"))]
+    GoneOnRecv,
 }
 
 type Response<T> = oneshot::Sender<Result<T, Error>>;
 
 #[derive(Debug)]
-pub enum Commands {
+enum Commands {
     GetBalance {
         user: sign::PublicKey,
         resp: Response<u64>,
@@ -31,19 +40,65 @@ pub enum Commands {
     },
 }
 
+#[derive(Clone)]
 pub struct Accounts {
+    agent: mpsc::Sender<Commands>,
+}
+
+struct AccountsHandler {
     ledger: HashMap<sign::PublicKey, account::Account>,
 }
 
-// TODO do not expose channels but use `async fn get_balance(user) -> Result<u64, Error>`
 impl Accounts {
     pub fn new() -> Self {
+        Self {
+            agent: AccountsHandler::new().spawn(),
+        }
+    }
+
+    pub async fn get_balance(&self, user: sign::PublicKey) -> Result<u64, Error> {
+        let (tx, rx) = oneshot::channel();
+
+        self.agent
+            .send(Commands::GetBalance { user, resp: tx })
+            .await
+            .map_err(|_| Error::GoneOnSend)?;
+
+        rx.await.map_err(|_| Error::GoneOnRecv)?
+    }
+
+    pub async fn transfer(
+        &self,
+        sender: sign::PublicKey,
+        sender_sequence: sieve::Sequence,
+        receiver: sign::PublicKey,
+        amount: u64,
+    ) -> Result<(), Error> {
+        let (tx, rx) = oneshot::channel();
+
+        self.agent
+            .send(Commands::Transfer {
+                sender,
+                sender_sequence,
+                receiver,
+                amount,
+                resp: tx,
+            })
+            .await
+            .map_err(|_| Error::GoneOnSend)?;
+
+        rx.await.map_err(|_| Error::GoneOnRecv)?
+    }
+}
+
+impl AccountsHandler {
+    fn new() -> Self {
         Self {
             ledger: Default::default(),
         }
     }
 
-    pub fn spawn(mut self) -> mpsc::Sender<Commands> {
+    fn spawn(mut self) -> mpsc::Sender<Commands> {
         let (tx, mut rx) = mpsc::channel(32);
 
         tokio::spawn(async move {
