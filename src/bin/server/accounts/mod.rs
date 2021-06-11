@@ -11,7 +11,7 @@ use account::Account;
 #[derive(snafu::Snafu, Debug)]
 pub enum Error {
     NoSuchAccount {
-        pubkey: sign::PublicKey,
+        pubkey: Box<sign::PublicKey>,
     },
     AccountModification {
         source: account::Error,
@@ -28,13 +28,13 @@ type Response<T> = oneshot::Sender<Result<T, Error>>;
 #[derive(Debug)]
 enum Commands {
     GetBalance {
-        user: sign::PublicKey,
+        user: Box<sign::PublicKey>,
         resp: Response<u64>,
     },
     Transfer {
-        sender: sign::PublicKey,
+        sender: Box<sign::PublicKey>,
         sender_sequence: sieve::Sequence,
-        receiver: sign::PublicKey,
+        receiver: Box<sign::PublicKey>,
         amount: u64,
         resp: Response<()>,
     },
@@ -56,7 +56,7 @@ impl Accounts {
         }
     }
 
-    pub async fn get_balance(&self, user: sign::PublicKey) -> Result<u64, Error> {
+    pub async fn get_balance(&self, user: Box<sign::PublicKey>) -> Result<u64, Error> {
         let (tx, rx) = oneshot::channel();
 
         self.agent
@@ -69,9 +69,9 @@ impl Accounts {
 
     pub async fn transfer(
         &self,
-        sender: sign::PublicKey,
+        sender: Box<sign::PublicKey>,
         sender_sequence: sieve::Sequence,
-        receiver: sign::PublicKey,
+        receiver: Box<sign::PublicKey>,
         amount: u64,
     ) -> Result<(), Error> {
         let (tx, rx) = oneshot::channel();
@@ -114,7 +114,8 @@ impl AccountsHandler {
                         amount,
                         resp,
                     } => {
-                        let _ = resp.send(self.transfer(sender, sender_sequence, receiver, amount));
+                        let _ =
+                            resp.send(self.transfer(*sender, sender_sequence, *receiver, amount));
                     }
                 }
             }

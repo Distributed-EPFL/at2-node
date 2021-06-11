@@ -132,9 +132,9 @@ impl Service {
     ) -> Result<(), accounts::Error> {
         self.accounts
             .transfer(
-                *payload.sender(),
+                Box::new(*payload.sender()),
                 payload.sequence(),
-                payload.payload().recipient,
+                Box::new(payload.payload().recipient),
                 payload.payload().amount,
             )
             .await
