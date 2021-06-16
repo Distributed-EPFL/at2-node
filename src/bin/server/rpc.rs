@@ -86,12 +86,22 @@ impl Service {
         );
 
         let sampler = AllSampler::default();
+        let mut handle = manager.run(sieve, sampler, num_cpus::get()).await;
+
+        let handle_errors = handle.errors();
+        tokio::spawn(async move {
+            if let Some(stream) = handle_errors {
+                stream
+                    .for_each(|err| {
+                        warn!("handle error: {}", err);
+                        future::ready(())
+                    })
+                    .await
+            }
+        });
 
         let service = Self {
-            handle: manager
-                .run(sieve, sampler, num_cpus::get())
-                .await
-                .processor_handle(),
+            handle: handle.processor_handle(),
             accounts: Accounts::new(),
         };
         service.spawn();
