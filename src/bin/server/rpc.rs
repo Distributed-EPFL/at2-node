@@ -14,14 +14,12 @@ use super::accounts::{self, Accounts};
 use super::config;
 use at2_node::proto;
 
-use snafu::{OptionExt, ResultExt, Snafu};
+use snafu::{ResultExt, Snafu};
 use tonic::Response;
 use tracing::warn;
 
 #[derive(Snafu, Debug)]
 pub enum ProtoError {
-    #[snafu(display("invalid request"))]
-    InvalidRequest,
     #[snafu(display("invalid serialization: {}", source))]
     InvalidSerialization { source: bincode::Error },
 }
@@ -174,7 +172,6 @@ impl proto::At2 for Service {
         request: tonic::Request<proto::SendAssetRequest>,
     ) -> Result<tonic::Response<proto::SendAssetReply>, tonic::Status> {
         let message = request.into_inner();
-        let request_transaction = message.transaction.context(InvalidRequest)?;
 
         self.handle
             .clone()
@@ -182,9 +179,9 @@ impl proto::At2 for Service {
                 bincode::deserialize(&message.sender).context(InvalidSerialization)?,
                 message.sequence,
                 at2_node::Transaction {
-                    recipient: bincode::deserialize(&request_transaction.recipient)
+                    recipient: bincode::deserialize(&message.receiver)
                         .context(InvalidSerialization)?,
-                    amount: request_transaction.amount,
+                    amount: message.amount,
                 },
                 bincode::deserialize(&message.signature).context(InvalidSerialization)?,
             ))

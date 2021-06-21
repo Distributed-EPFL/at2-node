@@ -78,11 +78,9 @@ async fn send_asset(recipient: sign::PublicKey, amount: u64) -> Result<(), SendA
 
     let request = tonic::Request::new(proto::SendAssetRequest {
         sender: bincode::serialize(&sign_keypair.public()).context(Serialize)?,
-        transaction: Some(proto::Transaction {
-            recipient: bincode::serialize(&recipient).context(Serialize)?,
-            amount,
-        }),
         sequence: 0, // TODO store sequence somewhere
+        receiver: bincode::serialize(&recipient).context(Serialize)?,
+        amount,
         signature: bincode::serialize(&signature).context(Serialize)?,
     });
 
