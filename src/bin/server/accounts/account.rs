@@ -36,6 +36,10 @@ impl Account {
         })
     }
 
+    pub fn last_sequence(&self) -> sieve::Sequence {
+        self.last_sequence
+    }
+
     pub fn balance(&self) -> u64 {
         self.balance
     }

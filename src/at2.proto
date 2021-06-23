@@ -4,6 +4,7 @@ package at2;
 service AT2 {
 	rpc SendAsset (SendAssetRequest) returns (SendAssetReply);
 	rpc GetBalance (GetBalanceRequest) returns (GetBalanceReply);
+	rpc GetLastSequence (GetLastSequenceRequest) returns (GetLastSequenceReply);
 }
 
 message SendAssetRequest {
@@ -22,4 +23,11 @@ message GetBalanceRequest {
 }
 message GetBalanceReply {
 	uint64 amount = 1;
+}
+
+message GetLastSequenceRequest {
+	bytes sender = 1;
+}
+message GetLastSequenceReply {
+	uint32 sequence = 1;
 }

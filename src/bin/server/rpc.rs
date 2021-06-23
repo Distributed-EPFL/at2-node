@@ -191,6 +191,20 @@ impl proto::At2 for Service {
         Ok(Response::new(proto::SendAssetReply {}))
     }
 
+    async fn get_last_sequence(
+        &self,
+        request: tonic::Request<proto::GetLastSequenceRequest>,
+    ) -> Result<tonic::Response<proto::GetLastSequenceReply>, tonic::Status> {
+        let sequence = self
+            .accounts
+            .get_last_sequence(
+                bincode::deserialize(&request.get_ref().sender).context(InvalidSerialization)?,
+            )
+            .await?;
+
+        Ok(Response::new(proto::GetLastSequenceReply { sequence }))
+    }
+
     async fn get_balance(
         &self,
         request: tonic::Request<proto::GetBalanceRequest>,
