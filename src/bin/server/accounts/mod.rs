@@ -31,6 +31,10 @@ enum Commands {
         user: Box<sign::PublicKey>,
         resp: Response<u64>,
     },
+    GetLastSequence {
+        user: Box<sign::PublicKey>,
+        resp: oneshot::Sender<sieve::Sequence>,
+    },
     Transfer {
         sender: Box<sign::PublicKey>,
         sender_sequence: sieve::Sequence,
@@ -89,6 +93,20 @@ impl Accounts {
 
         rx.await.map_err(|_| Error::GoneOnRecv)?
     }
+
+    pub async fn get_last_sequence(
+        &self,
+        user: Box<sign::PublicKey>,
+    ) -> Result<sieve::Sequence, Error> {
+        let (tx, rx) = oneshot::channel();
+
+        self.agent
+            .send(Commands::GetLastSequence { user, resp: tx })
+            .await
+            .map_err(|_| Error::GoneOnSend)?;
+
+        Ok(rx.await.map_err(|_| Error::GoneOnRecv)?)
+    }
 }
 
 impl AccountsHandler {
@@ -116,6 +134,9 @@ impl AccountsHandler {
                     } => {
                         let _ =
                             resp.send(self.transfer(*sender, sender_sequence, *receiver, amount));
+                    }
+                    Commands::GetLastSequence { user, resp } => {
+                        let _ = resp.send(self.get_last_sequence(*user));
                     }
                 }
             }
@@ -158,5 +179,13 @@ impl AccountsHandler {
         self.ledger.insert(receiver, new_receiver_account);
 
         Ok(())
+    }
+
+    fn get_last_sequence(&self, sender: sign::PublicKey) -> sieve::Sequence {
+        if let Some(sender_account) = self.ledger.get(&sender) {
+            sender_account.last_sequence()
+        } else {
+            sieve::Sequence::default()
+        }
     }
 }
