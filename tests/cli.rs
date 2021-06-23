@@ -268,7 +268,7 @@ async fn can_send_asset() {
         .expect("send asset");
 
     // TODO confirm transaction
-    tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+    tokio::time::sleep(std::time::Duration::from_secs(3)).await;
 
     assert_eq!(
         get_balance(first_client_config) + 10,

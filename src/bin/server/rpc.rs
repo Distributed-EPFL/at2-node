@@ -7,7 +7,8 @@ use drop::system::{AllSampler, Handle, NetworkSender, System, SystemManager};
 use futures::future;
 use futures::StreamExt;
 use murmur::MurmurConfig;
-use sieve::{self, Sieve, SieveConfig, SieveMessage};
+use sieve::SieveConfig;
+use contagion::{Contagion,ContagionConfig, ContagionMessage};
 
 use super::accounts::{self, Accounts};
 use super::config;
@@ -37,7 +38,7 @@ type M = at2_node::Transaction;
 
 #[derive(Clone)]
 pub struct Service {
-    handle: sieve::SieveHandle<M, NetworkSender<SieveMessage<M>>, sieve::Fixed>,
+    handle: contagion::ContagionHandle<M, NetworkSender<ContagionMessage<M>>, contagion::Fixed>,
     accounts: Accounts,
 }
 
@@ -73,15 +74,19 @@ impl Service {
 
         let manager = SystemManager::new(system);
 
-        let sieve = Sieve::new(
-            sieve::Fixed::new_local(),
-            SieveConfig {
-                sieve_sample_size: network.len(),
-                echo_threshold: network.len(),
-                murmur: MurmurConfig {
-                    murmur_gossip_size: network.len(),
-                    ..Default::default()
+        let sieve = Contagion::new(
+            contagion::Fixed::new_local(),
+            ContagionConfig {
+                sieve: SieveConfig {
+                    sieve_sample_size: network.len(),
+                    echo_threshold: network.len(),
+                    murmur: MurmurConfig {
+                        murmur_gossip_size: network.len(),
+                        ..Default::default()
+                    },
                 },
+                contagion_sample_size: network.len(),
+                ready_threshold: network.len()
             },
         );
 
@@ -115,7 +120,7 @@ impl Service {
         tokio::spawn(async move {
             loop {
                 match service.handle.deliver().await {
-                    Err(sieve::SieveError::Channel) => break,
+                    Err(contagion::ContagionError::Channel) => break,
                     Err(err) => {
                         warn!("deliver batch: {}", err);
                         continue;
