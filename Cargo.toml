@@ -9,6 +9,7 @@ license = "AGPL-3"
 drop = { git = "https://github.com/Distributed-EPFL/drop.git" }
 murmur = { git = "https://github.com/Distributed-EPFL/murmur.git" }
 sieve = { git = "https://github.com/Distributed-EPFL/sieve.git" }
+contagion = { git = "https://github.com/Distributed-EPFL/contagion.git" }
 bincode = "1.3.3"
 futures = "0.3"
 num_cpus = "1.13"
