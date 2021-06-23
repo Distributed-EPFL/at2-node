@@ -91,6 +91,12 @@ jobs:
         with:
           packages: "kcov"
 
+      - name: install cargo kcov
+        uses: actions-rs/cargo@v1
+        with:
+          command: install
+          args: cargo-kcov
+
       - uses: actions-rs/cargo@v1
         name: cargo kcov
         with:
