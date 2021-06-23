@@ -1,6 +1,7 @@
 use std::convert::From;
 use std::net::SocketAddr;
 
+use contagion::{Contagion, ContagionConfig, ContagionMessage};
 use drop::crypto::key::exchange::{self, Exchanger};
 use drop::net::{ConnectorExt, TcpConnector, TcpListener};
 use drop::system::{AllSampler, Handle, NetworkSender, System, SystemManager};
@@ -8,7 +9,6 @@ use futures::future;
 use futures::StreamExt;
 use murmur::MurmurConfig;
 use sieve::SieveConfig;
-use contagion::{Contagion,ContagionConfig, ContagionMessage};
 
 use super::accounts::{self, Accounts};
 use super::config;
@@ -74,7 +74,7 @@ impl Service {
 
         let manager = SystemManager::new(system);
 
-        let sieve = Contagion::new(
+        let contagion = Contagion::new(
             contagion::Fixed::new_local(),
             ContagionConfig {
                 sieve: SieveConfig {
@@ -86,12 +86,12 @@ impl Service {
                     },
                 },
                 contagion_sample_size: network.len(),
-                ready_threshold: network.len()
+                ready_threshold: network.len(),
             },
         );
 
         let sampler = AllSampler::default();
-        let mut handle = manager.run(sieve, sampler, num_cpus::get()).await;
+        let mut handle = manager.run(contagion, sampler, num_cpus::get()).await;
 
         let handle_errors = handle.errors();
         tokio::spawn(async move {
