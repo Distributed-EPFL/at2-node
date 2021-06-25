@@ -14,6 +14,7 @@ mod config;
 enum Commands {
     Config(CommandsConfig),
     SendAsset {
+        sequence: sieve::Sequence,
         recipient: sign::PublicKey,
         amount: u64,
     },
@@ -68,7 +69,11 @@ fn config(cmd: CommandsConfig) -> Result<(), config::Error> {
     }
 }
 
-async fn send_asset(recipient: sign::PublicKey, amount: u64) -> Result<(), CommandError> {
+async fn send_asset(
+    sequence: sieve::Sequence,
+    recipient: sign::PublicKey,
+    amount: u64,
+) -> Result<(), CommandError> {
     let config = config::from_reader(stdin()).context(ReadConfig)?;
 
     let sign_keypair = sign::KeyPair::from(config.private_key);
@@ -81,7 +86,7 @@ async fn send_asset(recipient: sign::PublicKey, amount: u64) -> Result<(), Comma
 
     let request = tonic::Request::new(proto::SendAssetRequest {
         sender: bincode::serialize(&sign_keypair.public()).context(Serialize)?,
-        sequence: 0, // TODO store sequence somewhere
+        sequence,
         receiver: bincode::serialize(&recipient).context(Serialize)?,
         amount,
         signature: bincode::serialize(&signature).context(Serialize)?,
@@ -134,9 +139,13 @@ async fn get_last_sequence() -> Result<(), CommandError> {
 async fn main() {
     let ret = match Commands::from_args() {
         Commands::Config(cmd) => config(cmd).context(Config),
-        Commands::SendAsset { recipient, amount } => {
-            send_asset(recipient, amount).await.context(SendAsset)
-        }
+        Commands::SendAsset {
+            sequence,
+            recipient,
+            amount,
+        } => send_asset(sequence, recipient, amount)
+            .await
+            .context(SendAsset),
         Commands::GetBalance => get_balance().await.context(GetBalance),
         Commands::GetLastSequence => get_last_sequence().await.context(GetLastSequence),
     };

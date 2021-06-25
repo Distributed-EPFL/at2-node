@@ -217,7 +217,7 @@ async fn client_without_servers_fails() {
         .expect("recipient public key");
 
     gen_client_cmd(vec!["config", "new", &rpc.to_string()])
-        .pipe(gen_client_cmd(vec!["send-asset", &recipient, "10"]))
+        .pipe(gen_client_cmd(vec!["send-asset", "1", &recipient, "10"]))
         .run()
         .expect_err("send asset");
 }
@@ -242,16 +242,26 @@ async fn new_client_has_some_asset() {
     assert!(get_balance(config) > 0);
 }
 
-fn transfer(sender_config: String, receiver_config: String, amount: usize) {
+fn transfer(
+    sender_config: String,
+    sender_sequence: sieve::Sequence,
+    receiver_config: String,
+    amount: usize,
+) {
     let second_client = gen_client_cmd(vec!["config", "get-public-key"])
         .stdin_bytes(receiver_config)
         .read()
         .expect("get public key");
 
-    gen_client_cmd(vec!["send-asset", &second_client, &amount.to_string()])
-        .stdin_bytes(sender_config)
-        .run()
-        .expect("send asset");
+    gen_client_cmd(vec![
+        "send-asset",
+        &sender_sequence.to_string(),
+        &second_client,
+        &amount.to_string(),
+    ])
+    .stdin_bytes(sender_config)
+    .run()
+    .expect("send asset");
 }
 
 fn get_last_sequence(config: String) -> sieve::Sequence {
@@ -287,7 +297,8 @@ async fn transfer_increment_sequence() {
 
     let previous_sequence = get_last_sequence(sender.clone());
 
-    transfer(sender.clone(), receiver.clone(), 1);
+    transfer(sender.clone(), 1, receiver.clone(), 1);
+    tokio::time::sleep(std::time::Duration::from_secs(1)).await;
 
     let current_sequence = get_last_sequence(sender.clone());
 
@@ -308,7 +319,7 @@ async fn can_send_asset() {
         .read()
         .expect("create receiver");
 
-    transfer(sender.clone(), receiver.clone(), AMOUNT);
+    transfer(sender.clone(), 1, receiver.clone(), AMOUNT);
 
     wait_for_sequence(sender.clone(), 1).await;
 
