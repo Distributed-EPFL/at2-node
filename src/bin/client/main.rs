@@ -14,10 +14,12 @@ mod config;
 enum Commands {
     Config(CommandsConfig),
     SendAsset {
+        sequence: sieve::Sequence,
         recipient: sign::PublicKey,
         amount: u64,
     },
     GetBalance,
+    GetLastSequence,
 }
 
 #[derive(Debug, StructOpt)]
@@ -27,7 +29,7 @@ enum CommandsConfig {
 }
 
 #[derive(Debug, Snafu)]
-enum SendAssetError {
+enum CommandError {
     #[snafu(display("read config: {}", source))]
     ReadConfig { source: config::Error },
     #[snafu(display("serialize: {}", source))]
@@ -43,9 +45,11 @@ enum CommandsError {
     #[snafu(display("config: {}", source))]
     Config { source: config::Error },
     #[snafu(display("send asset: {}", source))]
-    SendAsset { source: SendAssetError },
+    SendAsset { source: CommandError },
     #[snafu(display("get asset: {}", source))]
-    GetBalance { source: SendAssetError },
+    GetBalance { source: CommandError },
+    #[snafu(display("get last sequence: {}", source))]
+    GetLastSequence { source: CommandError },
 }
 
 fn config(cmd: CommandsConfig) -> Result<(), config::Error> {
@@ -65,7 +69,11 @@ fn config(cmd: CommandsConfig) -> Result<(), config::Error> {
     }
 }
 
-async fn send_asset(recipient: sign::PublicKey, amount: u64) -> Result<(), SendAssetError> {
+async fn send_asset(
+    sequence: sieve::Sequence,
+    recipient: sign::PublicKey,
+    amount: u64,
+) -> Result<(), CommandError> {
     let config = config::from_reader(stdin()).context(ReadConfig)?;
 
     let sign_keypair = sign::KeyPair::from(config.private_key);
@@ -78,11 +86,9 @@ async fn send_asset(recipient: sign::PublicKey, amount: u64) -> Result<(), SendA
 
     let request = tonic::Request::new(proto::SendAssetRequest {
         sender: bincode::serialize(&sign_keypair.public()).context(Serialize)?,
-        transaction: Some(proto::Transaction {
-            recipient: bincode::serialize(&recipient).context(Serialize)?,
-            amount,
-        }),
-        sequence: 0, // TODO store sequence somewhere
+        sequence,
+        receiver: bincode::serialize(&recipient).context(Serialize)?,
+        amount,
         signature: bincode::serialize(&signature).context(Serialize)?,
     });
 
@@ -91,7 +97,7 @@ async fn send_asset(recipient: sign::PublicKey, amount: u64) -> Result<(), SendA
     Ok(())
 }
 
-async fn get_balance() -> Result<(), SendAssetError> {
+async fn get_balance() -> Result<(), CommandError> {
     let config = config::from_reader(stdin()).context(ReadConfig)?;
 
     let reply = proto::At2Client::connect(config.rpc_address.to_string())
@@ -109,14 +115,39 @@ async fn get_balance() -> Result<(), SendAssetError> {
     Ok(())
 }
 
+async fn get_last_sequence() -> Result<(), CommandError> {
+    let config = config::from_reader(stdin()).context(ReadConfig)?;
+
+    let request = tonic::Request::new(proto::GetLastSequenceRequest {
+        sender: bincode::serialize(&sign::KeyPair::from(config.private_key).public())
+            .context(Serialize)?,
+    });
+
+    let reply = proto::At2Client::connect(config.rpc_address.to_string())
+        .await
+        .context(Transport)?
+        .get_last_sequence(request)
+        .await
+        .context(Rpc)?;
+
+    println!("{}", reply.get_ref().sequence);
+
+    Ok(())
+}
+
 #[tokio::main(flavor = "multi_thread")]
 async fn main() {
     let ret = match Commands::from_args() {
         Commands::Config(cmd) => config(cmd).context(Config),
-        Commands::SendAsset { recipient, amount } => {
-            send_asset(recipient, amount).await.context(SendAsset)
-        }
+        Commands::SendAsset {
+            sequence,
+            recipient,
+            amount,
+        } => send_asset(sequence, recipient, amount)
+            .await
+            .context(SendAsset),
         Commands::GetBalance => get_balance().await.context(GetBalance),
+        Commands::GetLastSequence => get_last_sequence().await.context(GetLastSequence),
     };
 
     if let Err(err) = ret {

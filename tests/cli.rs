@@ -217,61 +217,111 @@ async fn client_without_servers_fails() {
         .expect("recipient public key");
 
     gen_client_cmd(vec!["config", "new", &rpc.to_string()])
-        .pipe(gen_client_cmd(vec!["send-asset", &recipient, "10"]))
+        .pipe(gen_client_cmd(vec!["send-asset", "1", &recipient, "10"]))
         .run()
         .expect_err("send asset");
+}
+
+fn get_balance(config: String) -> usize {
+    gen_client_cmd(vec!["get-balance"])
+        .stdin_bytes(config)
+        .read()
+        .expect("get asset")
+        .parse::<usize>()
+        .expect("parse asset amount as usize")
 }
 
 #[tokio::test]
 async fn new_client_has_some_asset() {
     let (_servers, rpc) = start_network(3).await;
 
-    let amount = gen_client_cmd(vec!["config", "new", &rpc.to_string()])
-        .pipe(gen_client_cmd(vec!["get-balance"]))
+    let config = gen_client_cmd(vec!["config", "new", &rpc.to_string()])
         .read()
-        .expect("get asset")
-        .parse::<u64>()
-        .expect("parse asset amount as u64");
+        .expect("create sender");
 
-    assert!(amount > 0);
+    assert!(get_balance(config) > 0);
+}
+
+fn transfer(
+    sender_config: String,
+    sender_sequence: sieve::Sequence,
+    receiver_config: String,
+    amount: usize,
+) {
+    let second_client = gen_client_cmd(vec!["config", "get-public-key"])
+        .stdin_bytes(receiver_config)
+        .read()
+        .expect("get public key");
+
+    gen_client_cmd(vec![
+        "send-asset",
+        &sender_sequence.to_string(),
+        &second_client,
+        &amount.to_string(),
+    ])
+    .stdin_bytes(sender_config)
+    .run()
+    .expect("send asset");
+}
+
+fn get_last_sequence(config: String) -> sieve::Sequence {
+    gen_client_cmd(vec!["get-last-sequence"])
+        .stdin_bytes(config)
+        .read()
+        .expect("get last sequence")
+        .parse::<sieve::Sequence>()
+        .expect("parse as Sequence")
+}
+
+async fn wait_for_sequence(config: String, sequence: sieve::Sequence) {
+    let mut last_sequence = sieve::Sequence::default();
+
+    while last_sequence != sequence {
+        tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+
+        last_sequence = get_last_sequence(config.clone());
+    }
+}
+
+#[tokio::test]
+async fn transfer_increment_sequence() {
+    let (_servers, rpc) = start_network(3).await;
+
+    let sender = gen_client_cmd(vec!["config", "new", &rpc.to_string()])
+        .read()
+        .expect("create sender");
+
+    let receiver = gen_client_cmd(vec!["config", "new", &rpc.to_string()])
+        .read()
+        .expect("create receiver");
+
+    let previous_sequence = get_last_sequence(sender.clone());
+
+    transfer(sender.clone(), 1, receiver.clone(), 1);
+    tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+
+    let current_sequence = get_last_sequence(sender.clone());
+
+    assert!(previous_sequence < current_sequence);
 }
 
 #[tokio::test]
 async fn can_send_asset() {
-    fn get_balance(config: String) -> u64 {
-        gen_client_cmd(vec!["get-balance"])
-            .stdin_bytes(config)
-            .read()
-            .expect("get asset")
-            .parse::<u64>()
-            .expect("parse asset amount as u64")
-    }
+    const AMOUNT: usize = 10;
 
     let (_servers, rpc) = start_network(3).await;
 
-    let first_client_config = gen_client_cmd(vec!["config", "new", &rpc.to_string()])
+    let sender = gen_client_cmd(vec!["config", "new", &rpc.to_string()])
         .read()
-        .expect("create first client");
+        .expect("create sender");
 
-    let second_client_config = gen_client_cmd(vec!["config", "new", &rpc.to_string()])
+    let receiver = gen_client_cmd(vec!["config", "new", &rpc.to_string()])
         .read()
-        .expect("create second client");
+        .expect("create receiver");
 
-    let second_client = gen_client_cmd(vec!["config", "get-public-key"])
-        .stdin_bytes(second_client_config.clone())
-        .read()
-        .expect("get public key");
+    transfer(sender.clone(), 1, receiver.clone(), AMOUNT);
 
-    gen_client_cmd(vec!["send-asset", &second_client, "10"])
-        .stdin_bytes(first_client_config.clone())
-        .run()
-        .expect("send asset");
+    wait_for_sequence(sender.clone(), 1).await;
 
-    // TODO confirm transaction
-    tokio::time::sleep(std::time::Duration::from_secs(3)).await;
-
-    assert_eq!(
-        get_balance(first_client_config) + 10,
-        get_balance(second_client_config) - 10
-    );
+    assert_eq!(get_balance(sender) + AMOUNT, get_balance(receiver) - AMOUNT);
 }

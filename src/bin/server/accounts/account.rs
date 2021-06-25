@@ -28,12 +28,16 @@ impl Account {
     }
 
     pub fn debit(&self, sequence: sieve::Sequence, amount: u64) -> Result<Self, Error> {
-        ensure!(self.last_sequence + 1 != sequence, InconsecutiveSequence);
+        ensure!(self.last_sequence + 1 == sequence, InconsecutiveSequence);
 
         Ok(Self {
             last_sequence: sequence,
             balance: self.balance.checked_sub(amount).context(Underflow)?,
         })
+    }
+
+    pub fn last_sequence(&self) -> sieve::Sequence {
+        self.last_sequence
     }
 
     pub fn balance(&self) -> u64 {
