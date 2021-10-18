@@ -38,6 +38,7 @@ jobs:
         name: cargo test
         with:
           command: test
+          args: --all-features
 
   deny:
     name: cargo deny
@@ -101,7 +102,7 @@ jobs:
         name: cargo kcov
         with:
           command: kcov
-          args: -- --exclude-pattern=/.cargo,/usr/lib
+          args: --features client,server -- --exclude-pattern=/.cargo,/usr/lib
 
       - name: kcov subprocesses only
         shell: bash

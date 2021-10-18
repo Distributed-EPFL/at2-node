@@ -1,14 +1,19 @@
-use futures::future::join_all;
-use std::iter::{repeat_with, Extend};
-use std::net::{Ipv4Addr, SocketAddr};
-use std::path::PathBuf;
-use std::sync::atomic::{AtomicU16, AtomicU8, Ordering};
-use std::time::{Duration, Instant};
-use std::{env, fs, io};
-use tokio::{net::TcpStream, task::yield_now};
-use url::Url;
+#[cfg(all(test, not(all(feature = "server", feature = "client"))))]
+compile_error!("tests need both server and client features");
+
+use std::{
+    env, fs, io,
+    iter::{repeat_with, Extend},
+    net::{Ipv4Addr, SocketAddr},
+    path::PathBuf,
+    sync::atomic::{AtomicU16, AtomicU8, Ordering},
+    time::{Duration, Instant},
+};
 
 use duct::cmd;
+use futures::future::join_all;
+use tokio::{net::TcpStream, task::yield_now};
+use url::Url;
 
 const CLIENT_BIN: &str = env!("CARGO_BIN_EXE_client");
 const SERVER_BIN: &str = env!("CARGO_BIN_EXE_server");
@@ -37,9 +42,12 @@ struct Server {
 
 impl Drop for Server {
     fn drop(&mut self) {
-        use nix::sys::signal::{self, Signal};
-        use nix::unistd::Pid;
         use std::thread;
+
+        use nix::{
+            sys::signal::{self, Signal},
+            unistd::Pid,
+        };
 
         self.handle.pids().iter().for_each(|pid| {
             let _ = signal::kill(Pid::from_raw(*pid as i32), Signal::SIGTERM);
