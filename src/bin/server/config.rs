@@ -1,5 +1,4 @@
-use std::io;
-use std::net::SocketAddr;
+use std::{io, net::SocketAddr};
 
 use drop::crypto::{key::exchange, sign};
 use snafu::{ResultExt, Snafu};
@@ -10,20 +9,11 @@ pub struct ConfigAddresses {
     pub rpc: SocketAddr,
 }
 
-// TODO remove when exchange::PrivateKey can be used to generate exchange::PublicKey
-#[derive(serde::Deserialize, serde::Serialize)]
-pub struct ConfigKeysNetwork {
-    #[serde(with = "hex")]
-    pub public: exchange::PublicKey,
-    #[serde(with = "hex")]
-    pub private: exchange::PrivateKey,
-}
-
 #[derive(serde::Deserialize, serde::Serialize)]
 pub struct ConfigKeys {
     #[serde(with = "hex")]
     pub sign: sign::PrivateKey,
-    pub network: ConfigKeysNetwork,
+    pub network: exchange::PrivateKey,
 }
 
 #[derive(serde::Deserialize, serde::Serialize)]
@@ -33,21 +23,6 @@ pub struct Config {
     // FIXME toml fails with empty Vec alexcrichton/toml-rs#384
     #[serde(skip_serializing_if = "Vec::is_empty", default = "Vec::default")]
     pub nodes: Vec<Node>,
-}
-
-impl From<exchange::KeyPair> for ConfigKeysNetwork {
-    fn from(keypair: exchange::KeyPair) -> Self {
-        Self {
-            public: *keypair.public(),
-            private: keypair.secret().clone(),
-        }
-    }
-}
-
-impl From<ConfigKeysNetwork> for exchange::KeyPair {
-    fn from(config: ConfigKeysNetwork) -> Self {
-        exchange::KeyPair::new(config.private, config.public)
-    }
 }
 
 #[derive(serde::Deserialize, serde::Serialize, Debug)]
