@@ -10,7 +10,7 @@ use snafu::{ResultExt, Snafu};
 pub struct Config {
     #[serde(with = "serde_str")]
     pub rpc_address: Url,
-    #[serde(with = "serde_str")]
+    #[serde(with = "hex")]
     pub private_key: sign::PrivateKey,
 }
 

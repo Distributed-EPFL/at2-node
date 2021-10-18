@@ -1,9 +1,8 @@
 use std::io;
 use std::net::SocketAddr;
 
-use snafu::{ResultExt, Snafu};
-
 use drop::crypto::{key::exchange, sign};
+use snafu::{ResultExt, Snafu};
 
 #[derive(serde::Deserialize, serde::Serialize)]
 pub struct ConfigAddresses {
@@ -14,15 +13,15 @@ pub struct ConfigAddresses {
 // TODO remove when exchange::PrivateKey can be used to generate exchange::PublicKey
 #[derive(serde::Deserialize, serde::Serialize)]
 pub struct ConfigKeysNetwork {
-    #[serde(with = "serde_str")]
+    #[serde(with = "hex")]
     pub public: exchange::PublicKey,
-    #[serde(with = "serde_str")]
+    #[serde(with = "hex")]
     pub private: exchange::PrivateKey,
 }
 
 #[derive(serde::Deserialize, serde::Serialize)]
 pub struct ConfigKeys {
-    #[serde(with = "serde_str")]
+    #[serde(with = "hex")]
     pub sign: sign::PrivateKey,
     pub network: ConfigKeysNetwork,
 }
@@ -54,7 +53,7 @@ impl From<ConfigKeysNetwork> for exchange::KeyPair {
 #[derive(serde::Deserialize, serde::Serialize, Debug)]
 pub struct Node {
     pub address: SocketAddr,
-    #[serde(with = "serde_str")]
+    #[serde(with = "hex")]
     pub public_key: exchange::PublicKey,
 }
 

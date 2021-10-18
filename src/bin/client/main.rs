@@ -1,20 +1,24 @@
 use std::io::{stdin, stdout};
 
-use drop::crypto::sign;
-
 use at2_node::{proto, Transaction};
-
+use drop::crypto::sign;
+use hex::FromHex;
 use snafu::{ResultExt, Snafu};
 use structopt::StructOpt;
 use url::Url;
 
 mod config;
 
+fn hex_decode<T: FromHex>(src: &str) -> Result<T, T::Error> {
+    T::from_hex(src)
+}
+
 #[derive(Debug, StructOpt)]
 enum Commands {
     Config(CommandsConfig),
     SendAsset {
         sequence: sieve::Sequence,
+        #[structopt(parse(try_from_str = hex_decode))]
         recipient: sign::PublicKey,
         amount: u64,
     },

@@ -16,6 +16,7 @@ num_cpus = "1.13"
 prost = "0.7"
 serde = { version = "1", features = ["derive"] }
 serde_str = "0.1"
+hex = { version = "0.4", features = [ "serde" ] }
 snafu = "0.6"
 structopt = "0.3"
 tokio = { version = "1", features = ["macros", "net", "rt-multi-thread", "sync", "time"] }
