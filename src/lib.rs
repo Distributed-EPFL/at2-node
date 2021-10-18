@@ -1,10 +1,9 @@
-use serde::{Deserialize, Serialize};
-
 use drop::crypto::sign;
+use serde::{Serialize, Deserialize};
 
 pub mod proto;
 
-#[drop::system::message]
+#[drop::message]
 pub struct Transaction {
     pub recipient: sign::PublicKey,
     pub amount: u64,
