@@ -1,15 +1,10 @@
-use std::io;
-use std::net::SocketAddr;
-use std::process;
-
-use drop::crypto::{key::exchange, sign};
+use std::{io, net::SocketAddr, process};
 
 use at2_node::proto;
-
+use drop::crypto::{key::exchange, sign};
 use snafu::{ResultExt, Snafu};
 use structopt::StructOpt;
 use tonic::transport::Server;
-
 use tracing::{subscriber, Level};
 use tracing_fmt::FmtSubscriber;
 
@@ -64,7 +59,7 @@ fn config(cmd: CommandsConfig) -> Result<(), Error> {
             },
             keys: config::ConfigKeys {
                 sign: sign::KeyPair::random().private(),
-                network: exchange::KeyPair::random().into(),
+                network: exchange::KeyPair::random().secret().to_owned(),
             },
             nodes: vec![],
         }
@@ -76,7 +71,9 @@ fn config(cmd: CommandsConfig) -> Result<(), Error> {
             config::Nodes {
                 nodes: vec![config::Node {
                     address: config.addresses.node,
-                    public_key: config.keys.network.public,
+                    public_key: exchange::KeyPair::new(config.keys.network)
+                        .public()
+                        .to_owned(),
                 }],
             }
             .to_writer(io::stdout())
@@ -97,7 +94,7 @@ async fn run() -> Result<(), Error> {
 
     let service = rpc::Service::new(
         config.addresses.node,
-        config.keys.network.into(),
+        exchange::KeyPair::new(config.keys.network),
         config.nodes,
     )
     .await
