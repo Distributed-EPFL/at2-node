@@ -1,15 +1,13 @@
 use std::io;
 
-use url::Url;
-
 use drop::crypto::sign;
-
+use http::Uri;
 use snafu::{ResultExt, Snafu};
 
 #[derive(serde::Deserialize, serde::Serialize)]
 pub struct Config {
     #[serde(with = "serde_str")]
-    pub rpc_address: Url,
+    pub rpc_address: Uri,
     #[serde(with = "hex")]
     pub private_key: sign::PrivateKey,
 }

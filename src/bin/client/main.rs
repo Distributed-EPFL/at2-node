@@ -1,11 +1,11 @@
 use std::io::{stdin, stdout};
 
-use at2_node::{proto, Transaction};
+use at2_node::client::{self, Client};
 use drop::crypto::sign;
 use hex::FromHex;
+use http::Uri;
 use snafu::{ResultExt, Snafu};
 use structopt::StructOpt;
-use url::Url;
 
 mod config;
 
@@ -28,7 +28,7 @@ enum Commands {
 
 #[derive(Debug, StructOpt)]
 enum CommandsConfig {
-    New { rpc_address: Url },
+    New { rpc_address: Uri },
     GetPublicKey,
 }
 
@@ -38,10 +38,8 @@ enum CommandError {
     ReadConfig { source: config::Error },
     #[snafu(display("serialize: {}", source))]
     Serialize { source: bincode::Error },
-    #[snafu(display("transport: {}", source))]
-    Transport { source: tonic::transport::Error },
-    #[snafu(display("send asset: {}", source))]
-    Rpc { source: tonic::Status },
+    #[snafu(display("client: {}", source))]
+    ClientError { source: client::Error },
 }
 
 #[derive(Debug, Snafu)]
@@ -80,23 +78,16 @@ async fn send_asset(
 ) -> Result<(), CommandError> {
     let config = config::from_reader(stdin()).context(ReadConfig)?;
 
-    let sign_keypair = sign::KeyPair::from(config.private_key);
-    let message = Transaction { recipient, amount };
-    let signature = sign_keypair.sign(&message).expect("sign failed");
-
-    let mut client = proto::At2Client::connect(config.rpc_address.to_string())
+    Client::new(config.rpc_address)
+        .context(ClientError)?
+        .send_asset(
+            &sign::KeyPair::from(config.private_key),
+            sequence,
+            recipient,
+            amount,
+        )
         .await
-        .context(Transport)?;
-
-    let request = tonic::Request::new(proto::SendAssetRequest {
-        sender: bincode::serialize(&sign_keypair.public()).context(Serialize)?,
-        sequence,
-        receiver: bincode::serialize(&recipient).context(Serialize)?,
-        amount,
-        signature: bincode::serialize(&signature).context(Serialize)?,
-    });
-
-    client.send_asset(request).await.context(Rpc)?;
+        .context(ClientError)?;
 
     Ok(())
 }
@@ -104,17 +95,13 @@ async fn send_asset(
 async fn get_balance() -> Result<(), CommandError> {
     let config = config::from_reader(stdin()).context(ReadConfig)?;
 
-    let reply = proto::At2Client::connect(config.rpc_address.to_string())
+    let amount = Client::new(config.rpc_address)
+        .context(ClientError)?
+        .get_balance(&sign::KeyPair::from(config.private_key).public())
         .await
-        .context(Transport)?
-        .get_balance(tonic::Request::new(proto::GetBalanceRequest {
-            sender: bincode::serialize(&sign::KeyPair::from(config.private_key).public())
-                .context(Serialize)?,
-        }))
-        .await
-        .context(Rpc)?;
+        .context(ClientError)?;
 
-    println!("{}", reply.get_ref().amount);
+    println!("{}", amount);
 
     Ok(())
 }
@@ -122,19 +109,13 @@ async fn get_balance() -> Result<(), CommandError> {
 async fn get_last_sequence() -> Result<(), CommandError> {
     let config = config::from_reader(stdin()).context(ReadConfig)?;
 
-    let request = tonic::Request::new(proto::GetLastSequenceRequest {
-        sender: bincode::serialize(&sign::KeyPair::from(config.private_key).public())
-            .context(Serialize)?,
-    });
-
-    let reply = proto::At2Client::connect(config.rpc_address.to_string())
+    let sequence = Client::new(config.rpc_address)
+        .context(ClientError)?
+        .get_last_sequence(&sign::KeyPair::from(config.private_key).public())
         .await
-        .context(Transport)?
-        .get_last_sequence(request)
-        .await
-        .context(Rpc)?;
+        .context(ClientError)?;
 
-    println!("{}", reply.get_ref().sequence);
+    println!("{}", sequence);
 
     Ok(())
 }
