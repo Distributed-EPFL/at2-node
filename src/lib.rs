@@ -1,6 +1,7 @@
 use drop::crypto::sign;
 use serde::{Serialize, Deserialize};
 
+pub mod client;
 pub mod proto;
 
 #[drop::message]

@@ -166,7 +166,7 @@ impl From<accounts::Error> for tonic::Status {
 }
 
 #[tonic::async_trait]
-impl proto::At2 for Service {
+impl proto::at2_server::At2 for Service {
     async fn send_asset(
         &self,
         request: tonic::Request<proto::SendAssetRequest>,

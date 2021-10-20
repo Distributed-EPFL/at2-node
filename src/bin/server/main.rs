@@ -102,7 +102,7 @@ async fn run() -> Result<(), Error> {
     .context(Run)?;
 
     Server::builder()
-        .add_service(proto::At2Server::new(service))
+        .add_service(proto::at2_server::At2Server::new(service))
         .serve(config.addresses.rpc)
         .await
         .context(Rpc)

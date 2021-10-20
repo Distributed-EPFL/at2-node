@@ -9,15 +9,16 @@ resolver = "2"
 [dependencies]
 drop = { git = "https://github.com/Distributed-EPFL/drop" }
 sieve = { git = "https://github.com/Distributed-EPFL/sieve" }
+bincode = "1.3.3"
+http = "0.2"
 prost = { version = "0.8", default-features = false }
 serde = { version = "1", features = ["derive"] }
+snafu = "0.6"
 tonic = { version = "0.5", default-features = false, features = ["codegen", "prost"] }
 tokio = { version = "1", features = ["macros", "sync", "time"] }
 
 # cli
-bincode = { version = "1.3.3", optional = true }
-hex = { version = "0.4", features = [ "serde" ], optional = true }
-snafu = { version = "0.6", optional = true }
+hex = { version = "0.4", features = ["serde"], optional = true }
 structopt = { version = "0.3", optional = true }
 toml = { version = "0.5", optional = true }
 
@@ -27,13 +28,18 @@ url = { version = "2.2", optional = true }
 
 # server
 contagion = { git = "https://github.com/Distributed-EPFL/contagion", optional = true }
-grpc-web-client = { git = "https://github.com/titanous/grpc-web-client", branch = "main", optional = true }
 futures = { version = "0.3", optional = true }
 murmur = { git = "https://github.com/Distributed-EPFL/murmur", optional = true }
 num_cpus = { version = "1.13", optional = true }
 tonic-web = { version = "0.1", optional = true }
 tracing = { version = "0.1", optional = true }
 tracing-fmt = { version = "0.1", optional = true }
+
+[target.'cfg(not(target_family = "wasm"))'.dependencies]
+tonic = { version = "0.5", default-features = false, features = ["transport"] }
+
+[target.'cfg(target_family = "wasm")'.dependencies]
+grpc-web-client = { git = "https://github.com/titanous/grpc-web-client", branch = "main" }
 
 [dev-dependencies]
 duct = "0.13"
@@ -45,11 +51,9 @@ tonic-build = { version = "0.5", default-features = false, features = ["prost"] 
 [features]
 default = []
 _cli = [
-	"bincode",
 	"drop/system",
 	"hex",
 	"sieve/system",
-	"snafu",
 	"structopt",
 	"tokio/net",
 	"tokio/rt-multi-thread",
@@ -58,7 +62,6 @@ _cli = [
 client = [
 	"_cli",
 
-	"grpc-web-client",
 	"serde_str",
 	"url",
 ]
