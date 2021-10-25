@@ -40,30 +40,30 @@ pub struct Nodes {
 #[derive(Debug, Snafu)]
 pub enum Error {
     #[snafu(display("encode: {}", source))]
-    EncodeConfig { source: toml::ser::Error },
+    Encode { source: toml::ser::Error },
     #[snafu(display("write: {}", source))]
-    WriteConfig { source: io::Error },
+    Write { source: io::Error },
 
     #[snafu(display("read: {}", source))]
-    ReadConfig { source: io::Error },
+    Read { source: io::Error },
     #[snafu(display("decode: {}", source))]
-    DecodeConfig { source: toml::de::Error },
+    Decode { source: toml::de::Error },
 }
 
 pub fn from_reader(mut reader: impl io::Read) -> Result<Config, Error> {
     let mut buffer = String::new();
-    reader.read_to_string(&mut buffer).context(ReadConfig)?;
+    reader.read_to_string(&mut buffer).context(Read)?;
 
-    let config: Config = toml::from_str(&buffer).context(DecodeConfig)?;
+    let config: Config = toml::from_str(&buffer).context(Decode)?;
 
     Ok(config)
 }
 
 impl Config {
     pub fn to_writer(&self, mut writer: impl io::Write) -> Result<(), Error> {
-        let encoded = toml::to_vec(&self).context(EncodeConfig)?;
+        let encoded = toml::to_vec(&self).context(Encode)?;
 
-        writer.write_all(&encoded).context(WriteConfig)?;
+        writer.write_all(&encoded).context(Write)?;
 
         Ok(())
     }
@@ -72,9 +72,9 @@ impl Config {
 impl Nodes {
     // TODO wrapped into a vec, get rid of it when toml with empty vec works
     pub fn to_writer(&self, mut writer: impl io::Write) -> Result<(), Error> {
-        let encoded = toml::to_vec(&self).context(EncodeConfig)?;
+        let encoded = toml::to_vec(&self).context(Encode)?;
 
-        writer.write_all(&encoded).context(WriteConfig)?;
+        writer.write_all(&encoded).context(Write)?;
 
         Ok(())
     }

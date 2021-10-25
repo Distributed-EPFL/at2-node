@@ -169,7 +169,7 @@ async fn start_network(size: usize) -> (Vec<Server>, Url) {
 
     let (mut server_configs, node_configs): (Vec<_>, Vec<_>) = addresses
         .iter()
-        .map(|(node, rpc)| gen_config(&node, &rpc))
+        .map(|(node, rpc)| gen_config(node, rpc))
         .unzip();
 
     server_configs
@@ -193,8 +193,8 @@ async fn start_network(size: usize) -> (Vec<Server>, Url) {
 
     join_all(servers.iter().zip(&addresses).flat_map(|(server, addrs)| {
         vec![
-            wait_until_connect(&server, &addrs.0),
-            wait_until_connect(&server, &addrs.1),
+            wait_until_connect(server, &addrs.0),
+            wait_until_connect(server, &addrs.1),
         ]
     }))
     .await;
