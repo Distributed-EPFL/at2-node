@@ -3,10 +3,14 @@ compile_error!("tests need both server and client features");
 
 use std::{
     env, fs, io,
+    io::{BufRead, BufReader},
     iter::{repeat_with, Extend},
     net::{Ipv4Addr, SocketAddr},
     path::PathBuf,
-    sync::atomic::{AtomicU16, AtomicU8, Ordering},
+    sync::{
+        atomic::{AtomicU16, AtomicU8, Ordering},
+        Arc,
+    },
     time::{Duration, Instant},
 };
 
@@ -37,7 +41,8 @@ fn next_test_ip4() -> SocketAddr {
 }
 
 struct Server {
-    handle: duct::Handle,
+    handle: Arc<duct::ReaderHandle>,
+    reader: Option<std::thread::JoinHandle<()>>,
 }
 
 impl Drop for Server {
@@ -61,6 +66,10 @@ impl Drop for Server {
         }
 
         self.handle.kill().expect("kill server");
+
+        std::mem::take(&mut self.reader)
+            .map(|reader| reader.join().expect("finish reader"))
+            .unwrap();
     }
 }
 
@@ -118,11 +127,24 @@ fn gen_config(node: &SocketAddr, rpc: &SocketAddr) -> (ServerConfig, NodeConfig)
 }
 
 fn start_server(server_config: ServerConfig) -> Server {
+    let handle = gen_server_cmd(vec!["run"])
+        .stdin_bytes(server_config)
+        .stderr_to_stdout()
+        .reader()
+        .map(Arc::new)
+        .expect("run server");
+
+    let to_read = handle.clone();
     Server {
-        handle: gen_server_cmd(vec!["run"])
-            .stdin_bytes(server_config)
-            .start()
-            .expect("run server"),
+        handle,
+        reader: Some(std::thread::spawn(move || {
+            let mut reader = BufReader::new(&*to_read);
+            let mut line = String::new();
+            while reader.read_line(&mut line).is_ok() {
+                print!("{}", line);
+                line.clear();
+            }
+        })),
     }
 }
 
@@ -133,10 +155,7 @@ async fn wait_until_connect(server: &Server, to_probe: &SocketAddr) {
         }
 
         if let Err(err) = server.handle.try_wait() {
-            server
-                .handle
-                .wait()
-                .unwrap_or_else(|_| panic!("server finished early: {}", err));
+            panic!("server finished early: {}", err);
         }
 
         yield_now().await;
@@ -158,8 +177,18 @@ async fn server_started_twice_fails() {
 
     let second_server = start_server(server_config);
 
-    let exit = second_server.handle.wait();
-    assert_eq!(exit.err().map(|err| err.kind()), Some(io::ErrorKind::Other))
+    let timeout = Instant::now() + Duration::from_secs(5);
+    let mut exit = None;
+    while Instant::now() < timeout {
+        if let Err(err) = second_server.handle.try_wait() {
+            exit = Some(err.kind());
+            break;
+        }
+
+        tokio::time::sleep(Duration::from_millis(10)).await;
+    }
+
+    assert_eq!(exit, Some(io::ErrorKind::Other));
 }
 
 async fn start_network(size: usize) -> (Vec<Server>, Url) {
