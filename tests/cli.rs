@@ -285,7 +285,7 @@ async fn wait_for_sequence(config: String, sequence: sieve::Sequence) {
     let mut last_sequence = sieve::Sequence::default();
 
     while last_sequence != sequence {
-        tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+        tokio::time::sleep(Duration::from_millis(10)).await;
 
         last_sequence = get_last_sequence(config.clone());
     }
@@ -306,7 +306,16 @@ async fn transfer_increment_sequence() {
     let previous_sequence = get_last_sequence(sender.clone());
 
     transfer(sender.clone(), 1, receiver.clone(), 1);
-    tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+
+    let timeout = Instant::now() + Duration::from_secs(5);
+    while Instant::now() < timeout {
+        let current_sequence = get_last_sequence(sender.clone());
+        if previous_sequence != current_sequence {
+            break;
+        }
+
+        tokio::time::sleep(Duration::from_millis(10)).await;
+    }
 
     let current_sequence = get_last_sequence(sender.clone());
 
