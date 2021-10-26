@@ -1,7 +1,6 @@
 # at2-node
 
 [![at2-node](https://github.com/Distributed-EPFL/at2-node/actions/workflows/rust.yml/badge.svg)](https://github.com/Distributed-EPFL/at2-node/actions/workflows/rust.yml)
-[![codecov](https://codecov.io/gh/Distributed-EPFL/at2-node/branch/master/graph/badge.svg)](https://codecov.io/gh/Distributed-EPFL/at2-node)
 
 An implementation of a distributed ledger using
 [AT2](https://arxiv.org/abs/1812.10844) (Asynchronous Trustworthy Transfers).

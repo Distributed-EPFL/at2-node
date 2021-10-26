@@ -2,13 +2,12 @@
 compile_error!("tests need both server and client features");
 
 use std::{
-    env, fs, io,
+    env, io,
     io::{BufRead, BufReader},
     iter::{repeat_with, Extend},
     net::{Ipv4Addr, SocketAddr},
-    path::PathBuf,
     sync::{
-        atomic::{AtomicU16, AtomicU8, Ordering},
+        atomic::{AtomicU16, Ordering},
         Arc,
     },
     time::{Duration, Instant},
@@ -21,13 +20,9 @@ use url::Url;
 
 const CLIENT_BIN: &str = env!("CARGO_BIN_EXE_client");
 const SERVER_BIN: &str = env!("CARGO_BIN_EXE_server");
-const CRATE_ROOT: &str = env!("CARGO_MANIFEST_DIR");
 
-fn next_test_id() -> u8 {
-    static COUNTER: AtomicU8 = AtomicU8::new(0);
-
-    COUNTER.fetch_add(1, Ordering::Relaxed)
-}
+const TICK: Duration = Duration::from_millis(100);
+const TIMEOUT: Duration = Duration::from_secs(10);
 
 fn next_test_port() -> u16 {
     static PORT_OFFSET: AtomicU16 = AtomicU16::new(0);
@@ -58,10 +53,10 @@ impl Drop for Server {
             let _ = signal::kill(Pid::from_raw(*pid as i32), Signal::SIGTERM);
         });
 
-        let timeout = Instant::now() + Duration::from_secs(1);
+        let timeout = Instant::now() + TIMEOUT;
         while Instant::now() < timeout {
             if let Ok(None) = self.handle.try_wait() {
-                thread::sleep(Duration::from_millis(10));
+                thread::sleep(TICK);
             }
         }
 
@@ -76,47 +71,20 @@ impl Drop for Server {
 type ServerConfig = Vec<u8>;
 type NodeConfig = Vec<u8>;
 
-fn gen_cmd(binary: &str, binary_args: Vec<&str>) -> duct::Expression {
-    let kcov_args_env = env::var("KCOV_ARGS");
-    if kcov_args_env.is_err() {
-        return cmd(binary, binary_args);
-    }
-    let kcov_args = kcov_args_env.unwrap();
-
-    let mut args: Vec<String> = kcov_args.split(' ').map(|s| s.to_string()).collect();
-
-    let outdir_prefix = args
-        .pop()
-        .expect("KCOV_ARGS should contains an outdir prefix");
-    let mut outdir = PathBuf::new();
-    outdir.push(CRATE_ROOT);
-    outdir.push(format!("{}{}", outdir_prefix, next_test_id()));
-
-    fs::create_dir(&outdir).expect("create output dir");
-    args.push(outdir.to_str().unwrap().to_string());
-
-    args.push(binary.into());
-    args.extend(binary_args.iter().map(|a| a.to_string()));
-
-    cmd("kcov", &args)
-}
-
-fn gen_server_cmd(server_args: Vec<&str>) -> duct::Expression {
-    gen_cmd(SERVER_BIN, server_args)
-}
-
-fn gen_client_cmd(client_args: Vec<&str>) -> duct::Expression {
-    gen_cmd(CLIENT_BIN, client_args)
-}
-
 fn gen_config(node: &SocketAddr, rpc: &SocketAddr) -> (ServerConfig, NodeConfig) {
-    let full_config = gen_server_cmd(vec!["config", "new", &node.to_string(), &rpc.to_string()])
-        .stdout_capture()
-        .run()
-        .expect("generate config")
-        .stdout;
+    let full_config = cmd!(
+        SERVER_BIN,
+        "config",
+        "new",
+        &node.to_string(),
+        &rpc.to_string()
+    )
+    .stdout_capture()
+    .run()
+    .expect("generate config")
+    .stdout;
 
-    let node_config = gen_server_cmd(vec!["config", "get-node"])
+    let node_config = cmd!(SERVER_BIN, "config", "get-node")
         .stdin_bytes(full_config.clone())
         .stdout_capture()
         .run()
@@ -127,7 +95,7 @@ fn gen_config(node: &SocketAddr, rpc: &SocketAddr) -> (ServerConfig, NodeConfig)
 }
 
 fn start_server(server_config: ServerConfig) -> Server {
-    let handle = gen_server_cmd(vec!["run"])
+    let handle = cmd!(SERVER_BIN, "run")
         .stdin_bytes(server_config)
         .stderr_to_stdout()
         .reader()
@@ -177,7 +145,7 @@ async fn server_started_twice_fails() {
 
     let second_server = start_server(server_config);
 
-    let timeout = Instant::now() + Duration::from_secs(5);
+    let timeout = Instant::now() + TIMEOUT;
     let mut exit = None;
     while Instant::now() < timeout {
         if let Err(err) = second_server.handle.try_wait() {
@@ -185,7 +153,7 @@ async fn server_started_twice_fails() {
             break;
         }
 
-        tokio::time::sleep(Duration::from_millis(10)).await;
+        tokio::time::sleep(TICK).await;
     }
 
     assert_eq!(exit, Some(io::ErrorKind::Other));
@@ -248,19 +216,19 @@ async fn can_run_network() {
 async fn client_without_servers_fails() {
     let (_, rpc) = start_network(2).await;
 
-    let recipient = gen_client_cmd(vec!["config", "new", &rpc.to_string()])
-        .pipe(gen_client_cmd(vec!["config", "get-public-key"]))
+    let recipient = cmd!(CLIENT_BIN, "config", "new", &rpc.to_string())
+        .pipe(cmd!(CLIENT_BIN, "config", "get-public-key"))
         .read()
         .expect("recipient public key");
 
-    gen_client_cmd(vec!["config", "new", &rpc.to_string()])
-        .pipe(gen_client_cmd(vec!["send-asset", "1", &recipient, "10"]))
+    cmd!(CLIENT_BIN, "config", "new", &rpc.to_string())
+        .pipe(cmd!(CLIENT_BIN, "send-asset", "1", &recipient, "10"))
         .run()
         .expect_err("send asset");
 }
 
 fn get_balance(config: String) -> usize {
-    gen_client_cmd(vec!["get-balance"])
+    cmd!(CLIENT_BIN, "get-balance")
         .stdin_bytes(config)
         .read()
         .expect("get asset")
@@ -272,7 +240,7 @@ fn get_balance(config: String) -> usize {
 async fn new_client_has_some_asset() {
     let (_servers, rpc) = start_network(3).await;
 
-    let config = gen_client_cmd(vec!["config", "new", &rpc.to_string()])
+    let config = cmd!(CLIENT_BIN, "config", "new", &rpc.to_string())
         .read()
         .expect("create sender");
 
@@ -285,24 +253,25 @@ fn transfer(
     receiver_config: String,
     amount: usize,
 ) {
-    let second_client = gen_client_cmd(vec!["config", "get-public-key"])
+    let second_client = cmd!(CLIENT_BIN, "config", "get-public-key")
         .stdin_bytes(receiver_config)
         .read()
         .expect("get public key");
 
-    gen_client_cmd(vec![
+    cmd!(
+        CLIENT_BIN,
         "send-asset",
         &sender_sequence.to_string(),
         &second_client,
         &amount.to_string(),
-    ])
+    )
     .stdin_bytes(sender_config)
     .run()
     .expect("send asset");
 }
 
 fn get_last_sequence(config: String) -> sieve::Sequence {
-    gen_client_cmd(vec!["get-last-sequence"])
+    cmd!(CLIENT_BIN, "get-last-sequence")
         .stdin_bytes(config)
         .read()
         .expect("get last sequence")
@@ -311,44 +280,36 @@ fn get_last_sequence(config: String) -> sieve::Sequence {
 }
 
 async fn wait_for_sequence(config: String, sequence: sieve::Sequence) {
-    let mut last_sequence = sieve::Sequence::default();
+    let timeout = Instant::now() + TIMEOUT;
+    while Instant::now() < timeout {
+        let last_sequence = get_last_sequence(config.clone());
+        if last_sequence == sequence {
+            return;
+        }
 
-    while last_sequence != sequence {
-        tokio::time::sleep(Duration::from_millis(10)).await;
-
-        last_sequence = get_last_sequence(config.clone());
+        tokio::time::sleep(TICK).await;
     }
+
+    panic!("timeout expired");
 }
 
 #[tokio::test]
 async fn transfer_increment_sequence() {
     let (_servers, rpc) = start_network(3).await;
 
-    let sender = gen_client_cmd(vec!["config", "new", &rpc.to_string()])
+    let sender = cmd!(CLIENT_BIN, "config", "new", &rpc.to_string())
         .read()
         .expect("create sender");
 
-    let receiver = gen_client_cmd(vec!["config", "new", &rpc.to_string()])
+    let receiver = cmd!(CLIENT_BIN, "config", "new", &rpc.to_string())
         .read()
         .expect("create receiver");
 
-    let previous_sequence = get_last_sequence(sender.clone());
+    let sequence = get_last_sequence(sender.clone());
 
-    transfer(sender.clone(), 1, receiver.clone(), 1);
+    transfer(sender.clone(), sequence + 1, receiver.clone(), 1);
 
-    let timeout = Instant::now() + Duration::from_secs(5);
-    while Instant::now() < timeout {
-        let current_sequence = get_last_sequence(sender.clone());
-        if previous_sequence != current_sequence {
-            break;
-        }
-
-        tokio::time::sleep(Duration::from_millis(10)).await;
-    }
-
-    let current_sequence = get_last_sequence(sender.clone());
-
-    assert!(previous_sequence < current_sequence);
+    wait_for_sequence(sender.clone(), sequence + 1).await;
 }
 
 #[tokio::test]
@@ -357,11 +318,11 @@ async fn can_send_asset() {
 
     let (_servers, rpc) = start_network(3).await;
 
-    let sender = gen_client_cmd(vec!["config", "new", &rpc.to_string()])
+    let sender = cmd!(CLIENT_BIN, "config", "new", &rpc.to_string())
         .read()
         .expect("create sender");
 
-    let receiver = gen_client_cmd(vec!["config", "new", &rpc.to_string()])
+    let receiver = cmd!(CLIENT_BIN, "config", "new", &rpc.to_string())
         .read()
         .expect("create receiver");
 
