@@ -29,7 +29,7 @@ jobs:
         name: cargo build
         with:
           command: build
-          args: --bin server --features server
+          args: --bin server --features server --release
 
       - uses: kielabokkie/ssh-key-and-known-hosts-action@v1.2.0
         with:
@@ -38,7 +38,7 @@ jobs:
 
       - name: rsync repository
         run: >
-          rsync --archive "$GITHUB_WORKSPACE/target/debug/server"
+          rsync --archive "$GITHUB_WORKSPACE/target/release/server"
           "${{ env.DEPLOY_USER }}@${{ env.DEPLOY_HOST }}:at2-node"
 
       - name: rebuild docker-compose
