@@ -86,7 +86,7 @@ async fn run() -> Result<(), Error> {
     let config = config::from_reader(io::stdin()).context(Config)?;
 
     let subscriber = FmtSubscriber::builder()
-        .with_max_level(Level::TRACE)
+        .with_max_level(Level::DEBUG)
         .finish();
     subscriber::set_global_default(subscriber)
         .context(Logging)
