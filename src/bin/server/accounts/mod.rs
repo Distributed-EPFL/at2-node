@@ -1,9 +1,8 @@
 use std::collections::HashMap;
 
+use drop::crypto::sign;
 use snafu::ResultExt;
 use tokio::sync::{mpsc, oneshot};
-
-use drop::crypto::sign;
 
 mod account;
 use account::Account;
@@ -49,6 +48,7 @@ pub struct Accounts {
     agent: mpsc::Sender<Commands>,
 }
 
+/// Own the accounts themselves
 struct AccountsHandler {
     ledger: HashMap<sign::PublicKey, account::Account>,
 }
@@ -60,6 +60,7 @@ impl Accounts {
         }
     }
 
+    /// Return the balance for the given user
     pub async fn get_balance(&self, user: Box<sign::PublicKey>) -> Result<u64, Error> {
         let (tx, rx) = oneshot::channel();
 
@@ -71,6 +72,10 @@ impl Accounts {
         rx.await.map_err(|_| Error::GoneOnRecv)?
     }
 
+    /// Transfer an `amount` from the `sender` account to the `receiver`
+    ///
+    /// It fails if the `sender_sequence` is not consecutive to the last one transfered
+    /// transaction.
     pub async fn transfer(
         &self,
         sender: Box<sign::PublicKey>,
@@ -94,6 +99,7 @@ impl Accounts {
         rx.await.map_err(|_| Error::GoneOnRecv)?
     }
 
+    /// Return the last sequence used for this user.
     pub async fn get_last_sequence(
         &self,
         user: Box<sign::PublicKey>,
