@@ -101,8 +101,11 @@ async fn run() -> Result<(), Error> {
     .context(Service)
     .context(Run)?;
 
+    let web_config = tonic_web::config().allow_all_origins();
+
     Server::builder()
-        .add_service(proto::at2_server::At2Server::new(service))
+        .accept_http1(true)
+        .add_service(web_config.enable(proto::at2_server::At2Server::new(service)))
         .serve(config.addresses.rpc)
         .await
         .context(Rpc)
