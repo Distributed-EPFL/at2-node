@@ -7,12 +7,14 @@ pub enum Error {
     Underflow,
 }
 
+/// Contains the balance for a user
 pub struct Account {
     last_sequence: sieve::Sequence,
     balance: u64,
 }
 
 impl Account {
+    /// Create a new account
     pub fn new() -> Self {
         Self {
             last_sequence: sieve::Sequence::MIN,
@@ -20,6 +22,7 @@ impl Account {
         }
     }
 
+    /// Add some amount to this account
     pub fn credit(&self, amount: u64) -> Result<Self, Error> {
         Ok(Self {
             last_sequence: self.last_sequence,
@@ -27,6 +30,7 @@ impl Account {
         })
     }
 
+    /// Remove some amount from this account, iff the `sequence` is consecutive to the last one
     pub fn debit(&self, sequence: sieve::Sequence, amount: u64) -> Result<Self, Error> {
         ensure!(self.last_sequence + 1 == sequence, InconsecutiveSequence);
 
@@ -36,10 +40,12 @@ impl Account {
         })
     }
 
+    /// Return the last used sequence
     pub fn last_sequence(&self) -> sieve::Sequence {
         self.last_sequence
     }
 
+    /// Return the owned amount
     pub fn balance(&self) -> u64 {
         self.balance
     }
