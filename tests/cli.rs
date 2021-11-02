@@ -295,6 +295,8 @@ async fn wait_for_sequence(config: String, sequence: sieve::Sequence) {
 
 #[tokio::test]
 async fn transfer_increment_sequence() {
+    const AMOUNT: usize = 10;
+
     let (_servers, rpc) = start_network(3).await;
 
     let sender = cmd!(CLIENT_BIN, "config", "new", &rpc.to_string())
@@ -305,11 +307,9 @@ async fn transfer_increment_sequence() {
         .read()
         .expect("create receiver");
 
-    let sequence = get_last_sequence(sender.clone());
+    transfer(sender.clone(), 1, receiver.clone(), AMOUNT);
 
-    transfer(sender.clone(), sequence + 1, receiver.clone(), 1);
-
-    wait_for_sequence(sender.clone(), sequence + 1).await;
+    wait_for_sequence(sender.clone(), 1).await;
 }
 
 #[tokio::test]
