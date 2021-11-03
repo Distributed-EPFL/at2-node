@@ -3,7 +3,7 @@ name = "at2-node"
 version = "0.1.0"
 authors = ["Ogier Bouvier <ogier@bouvier.family>", "Valérian Rousset <tharvik@users.noreply.github.com>"]
 edition = "2018"
-license = "AGPL-3"
+license = "AGPL-3.0-only"
 resolver = "2"
 
 [dependencies]
