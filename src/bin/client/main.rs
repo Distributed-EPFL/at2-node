@@ -24,6 +24,7 @@ enum Commands {
     },
     GetBalance,
     GetLastSequence,
+    GetLatestTransactions,
 }
 
 #[derive(Debug, StructOpt)]
@@ -52,6 +53,8 @@ enum CommandsError {
     GetBalance { source: CommandError },
     #[snafu(display("get last sequence: {}", source))]
     GetLastSequence { source: CommandError },
+    #[snafu(display("get latest transactions: {}", source))]
+    GetLatestTransactions { source: CommandError },
 }
 
 fn config(cmd: CommandsConfig) -> Result<(), config::Error> {
@@ -120,6 +123,25 @@ async fn get_last_sequence() -> Result<(), CommandError> {
     Ok(())
 }
 
+async fn get_latest_transactions() -> Result<(), CommandError> {
+    let config = config::from_reader(stdin()).context(ReadConfig)?;
+
+    Client::new(config.rpc_address)
+        .context(ClientError)?
+        .get_latest_transactions()
+        .await
+        .context(ClientError)?
+        .iter()
+        .for_each(|tx| {
+            println!(
+                "{}: {} send {}¤ to {}",
+                tx.timestamp, tx.sender, tx.amount, tx.recipient,
+            )
+        });
+
+    Ok(())
+}
+
 #[tokio::main(flavor = "multi_thread")]
 async fn main() {
     let ret = match Commands::from_args() {
@@ -133,6 +155,9 @@ async fn main() {
             .context(SendAsset),
         Commands::GetBalance => get_balance().await.context(GetBalance),
         Commands::GetLastSequence => get_last_sequence().await.context(GetLastSequence),
+        Commands::GetLatestTransactions => get_latest_transactions()
+            .await
+            .context(GetLatestTransactions),
     };
 
     if let Err(err) = ret {

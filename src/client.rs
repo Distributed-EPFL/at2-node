@@ -4,7 +4,7 @@ use snafu::{ResultExt, Snafu};
 
 use crate::{
     proto::{at2_client::At2Client, *},
-    Transaction,
+    FullTransaction, ThinTransaction,
 };
 
 #[derive(Debug, Snafu)]
@@ -15,6 +15,9 @@ pub enum Error {
     },
     Deserialize {
         source: bincode::Error,
+    },
+    DeserializeTimestamp {
+        source: chrono::ParseError,
     },
     Serialize {
         source: bincode::Error,
@@ -57,14 +60,14 @@ impl Client {
         recipient: sign::PublicKey,
         amount: u64,
     ) -> Result<()> {
-        let message = Transaction { recipient, amount };
+        let message = ThinTransaction { recipient, amount };
         let signature = user.sign(&message).expect("sign failed");
 
         self.0
             .send_asset(tonic::Request::new(SendAssetRequest {
                 sender: bincode::serialize(&user.public()).context(Serialize)?,
                 sequence,
-                receiver: bincode::serialize(&recipient).context(Serialize)?,
+                recipient: bincode::serialize(&recipient).context(Serialize)?,
                 amount,
                 signature: bincode::serialize(&signature).context(Serialize)?,
             }))
@@ -91,5 +94,26 @@ impl Client {
             .await
             .context(Rpc)
             .map(|reply| reply.get_ref().sequence)
+    }
+
+    pub async fn get_latest_transactions(&mut self) -> Result<Vec<FullTransaction>> {
+        self.0
+            .get_latest_transactions(tonic::Request::new(GetLatestTransactionsRequest {}))
+            .await
+            .context(Rpc)?
+            .into_inner()
+            .transactions
+            .iter()
+            .map(|tx| {
+                Ok(FullTransaction {
+                    timestamp: chrono::DateTime::parse_from_rfc3339(&tx.timestamp)
+                        .context(DeserializeTimestamp)?
+                        .into(),
+                    sender: bincode::deserialize(&tx.sender).context(Deserialize)?,
+                    recipient: bincode::deserialize(&tx.recipient).context(Deserialize)?,
+                    amount: tx.amount,
+                })
+            })
+            .collect()
     }
 }
