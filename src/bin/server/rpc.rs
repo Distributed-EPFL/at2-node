@@ -1,27 +1,39 @@
-use std::convert::From;
 use std::net::SocketAddr;
 
+use at2_node::{proto, ThinTransaction};
 use contagion::{Contagion, ContagionConfig, ContagionMessage};
-use drop::crypto::key::exchange::{self, Exchanger};
-use drop::net::{ConnectorExt, TcpConnector, TcpListener};
-use drop::system::{AllSampler, Handle, NetworkSender, System, SystemManager};
-use futures::future;
-use futures::StreamExt;
+use drop::{
+    crypto::key::exchange::{self, Exchanger},
+    net::{ConnectorExt, TcpConnector, TcpListener},
+    system::{AllSampler, Handle, NetworkSender, System, SystemManager},
+};
+use futures::{future, StreamExt};
 use murmur::MurmurConfig;
 use sieve::SieveConfig;
-
-use super::accounts::{self, Accounts};
-use super::config;
-use at2_node::proto;
-
 use snafu::{ResultExt, Snafu};
 use tonic::Response;
 use tracing::warn;
 
+use super::{
+    accounts::{self, Accounts},
+    config,
+    recent_transactions::{self, RecentTransactions},
+};
+
 #[derive(Snafu, Debug)]
 pub enum ProtoError {
-    #[snafu(display("invalid serialization: {}", source))]
-    InvalidSerialization { source: bincode::Error },
+    #[snafu(display("deserialize: {}", source))]
+    Deserialize { source: bincode::Error },
+    #[snafu(display("serialize: {}", source))]
+    Serialize { source: bincode::Error },
+}
+
+#[derive(Snafu, Debug)]
+pub enum ProcessTransactionError {
+    #[snafu(display("handle by acounts: {}", source))]
+    ProcessTxForAccounts { source: accounts::Error },
+    #[snafu(display("handle by recent transactions: {}", source))]
+    ProcessTxForRecent { source: recent_transactions::Error },
 }
 
 #[derive(Snafu, Debug)]
@@ -29,15 +41,18 @@ pub enum Error {
     #[snafu(display("new service: {}", source))]
     ServiceNew { source: drop::net::ListenerError },
     #[snafu(display("service: process transaction: {}", source))]
-    ProcessTransaction { source: accounts::Error },
+    ProcessTransaction { source: ProcessTransactionError },
 }
-
-type M = at2_node::Transaction;
 
 #[derive(Clone)]
 pub struct Service {
-    handle: contagion::ContagionHandle<M, NetworkSender<ContagionMessage<M>>, contagion::Fixed>,
+    handle: contagion::ContagionHandle<
+        ThinTransaction,
+        NetworkSender<ContagionMessage<ThinTransaction>>,
+        contagion::Fixed,
+    >,
     accounts: Accounts,
+    recent_transactions: RecentTransactions,
 }
 
 impl Service {
@@ -106,6 +121,7 @@ impl Service {
         let service = Self {
             handle: handle.processor_handle(),
             accounts: Accounts::new(),
+            recent_transactions: RecentTransactions::new(),
         };
         service.spawn();
 
@@ -140,17 +156,27 @@ impl Service {
     }
 
     async fn process_payload(
-        &self,
-        payload: &sieve::Payload<at2_node::Transaction>,
-    ) -> Result<(), accounts::Error> {
+        &mut self,
+        msg: &sieve::Payload<ThinTransaction>,
+    ) -> Result<(), ProcessTransactionError> {
+        let sender = Box::new(msg.sender().to_owned());
+
         self.accounts
             .transfer(
-                Box::new(*payload.sender()),
-                payload.sequence(),
-                Box::new(payload.payload().recipient),
-                payload.payload().amount,
+                sender.clone(),
+                msg.sequence(),
+                Box::new(msg.payload().recipient),
+                msg.payload().amount,
             )
             .await
+            .context(ProcessTxForAccounts)?;
+
+        self.recent_transactions
+            .put(sender, msg.payload().to_owned())
+            .await
+            .context(ProcessTxForRecent)?;
+
+        Ok(())
     }
 }
 
@@ -161,6 +187,11 @@ impl From<ProtoError> for tonic::Status {
 }
 impl From<accounts::Error> for tonic::Status {
     fn from(err: accounts::Error) -> Self {
+        Self::invalid_argument(err.to_string())
+    }
+}
+impl From<recent_transactions::Error> for tonic::Status {
+    fn from(err: recent_transactions::Error) -> Self {
         Self::invalid_argument(err.to_string())
     }
 }
@@ -176,14 +207,13 @@ impl proto::at2_server::At2 for Service {
         self.handle
             .clone()
             .broadcast(&sieve::Payload::new(
-                bincode::deserialize(&message.sender).context(InvalidSerialization)?,
+                bincode::deserialize(&message.sender).context(Deserialize)?,
                 message.sequence,
-                at2_node::Transaction {
-                    recipient: bincode::deserialize(&message.receiver)
-                        .context(InvalidSerialization)?,
+                at2_node::ThinTransaction {
+                    recipient: bincode::deserialize(&message.recipient).context(Deserialize)?,
                     amount: message.amount,
                 },
-                bincode::deserialize(&message.signature).context(InvalidSerialization)?,
+                bincode::deserialize(&message.signature).context(Deserialize)?,
             ))
             .await
             .expect("broadcasting failed");
@@ -198,7 +228,7 @@ impl proto::at2_server::At2 for Service {
         let sequence = self
             .accounts
             .get_last_sequence(
-                bincode::deserialize(&request.get_ref().sender).context(InvalidSerialization)?,
+                bincode::deserialize(&request.get_ref().sender).context(Deserialize)?,
             )
             .await?;
 
@@ -212,11 +242,30 @@ impl proto::at2_server::At2 for Service {
         Ok(Response::new(proto::GetBalanceReply {
             amount: self
                 .accounts
-                .get_balance(
-                    bincode::deserialize(&request.get_ref().sender)
-                        .context(InvalidSerialization)?,
-                )
+                .get_balance(bincode::deserialize(&request.get_ref().sender).context(Deserialize)?)
                 .await?,
+        }))
+    }
+
+    async fn get_latest_transactions(
+        &self,
+        _: tonic::Request<proto::GetLatestTransactionsRequest>,
+    ) -> Result<tonic::Response<proto::GetLatestTransactionsReply>, tonic::Status> {
+        Ok(Response::new(proto::GetLatestTransactionsReply {
+            transactions: self
+                .recent_transactions
+                .get_all()
+                .await?
+                .iter()
+                .map(|tx| {
+                    Ok(proto::ProcessedTransaction {
+                        timestamp: tx.timestamp.to_rfc3339(),
+                        sender: bincode::serialize(&tx.sender).context(Serialize)?,
+                        recipient: bincode::serialize(&tx.recipient).context(Serialize)?,
+                        amount: tx.amount,
+                    })
+                })
+                .collect::<Result<_, ProtoError>>()?,
         }))
     }
 }

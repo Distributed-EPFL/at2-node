@@ -5,15 +5,14 @@ service AT2 {
 	rpc SendAsset (SendAssetRequest) returns (SendAssetReply);
 	rpc GetBalance (GetBalanceRequest) returns (GetBalanceReply);
 	rpc GetLastSequence (GetLastSequenceRequest) returns (GetLastSequenceReply);
+	rpc GetLatestTransactions (GetLatestTransactionsRequest) returns (GetLatestTransactionsReply);
 }
 
 message SendAssetRequest {
 	bytes sender = 1;
 	uint32 sequence = 2;
-
-	bytes receiver = 3;
+	bytes recipient = 3;
 	uint64 amount = 4;
-
 	bytes signature = 5;
 }
 message SendAssetReply {}
@@ -30,4 +29,16 @@ message GetLastSequenceRequest {
 }
 message GetLastSequenceReply {
 	uint32 sequence = 1;
+}
+
+message ProcessedTransaction {
+	string timestamp = 1;
+	bytes sender = 2;
+	bytes recipient = 3;
+	uint64 amount = 4;
+}
+
+message GetLatestTransactionsRequest {}
+message GetLatestTransactionsReply {
+	repeated ProcessedTransaction transactions = 1;
 }
