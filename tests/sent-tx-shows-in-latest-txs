@@ -1,0 +1,20 @@
+#!/usr/bin/env bash
+
+source ./lib.sh
+
+start_network
+
+sender=$(client config new $(get_node_rpc))
+recipient_pubkley=$(client config new $(get_node_rpc) |
+	client config get-public-key)
+
+echo "$sender" |
+	client send-asset 1 "$recipient_pubkley" 10
+wait_for_sequence "$sender" 1
+
+txs=$(client config new $(get_node_rpc) | client get-latest-transactions)
+
+[ "$(echo "$txs" | wc -l)" -eq 1 ] 
+echo "$txs" | grep -q "$(echo "$sender" | client config get-public-key)"
+echo "$txs" | grep -q "$recipient_pubkley"
+echo "$txs" | grep -q 10
