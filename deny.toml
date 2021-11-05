@@ -1,2 +1,9 @@
 [licenses]
 allow-osi-fsf-free = "either"
+
+[advisories]
+ignore = [
+	# chrono hasn't yet released a fix
+	# TODO fix upstream
+	"RUSTSEC-2020-0071", "RUSTSEC-2020-0159",
+]
