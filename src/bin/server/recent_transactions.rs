@@ -31,7 +31,8 @@ pub struct RecentTransactions {
     agent: mpsc::Sender<Commands>,
 }
 
-/// Own the recent transactions
+/// Tokio agent owning the recent transactions.
+/// The only way to interacte with it is to use [`RecentTransactions`].
 struct RecentTransactionsHandler(VecDeque<FullTransaction>);
 
 impl RecentTransactions {
