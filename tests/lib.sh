@@ -70,7 +70,7 @@ start_network() {
 
 	for port in $(seq $port_base $port_top)
 	do
-		while ! nc -q 0 localhost $port < /dev/null
+		while ! nc -w 0 localhost $port
 		do
 			sleep 0.1
 		done
