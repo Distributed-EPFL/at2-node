@@ -10,8 +10,8 @@ use tracing_fmt::FmtSubscriber;
 
 mod accounts;
 mod config;
-mod rpc;
 mod recent_transactions;
+mod rpc;
 
 #[derive(Debug, StructOpt)]
 enum Commands {
