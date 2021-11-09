@@ -1,0 +1,20 @@
+#!/usr/bin/env bash
+
+source ./lib.sh
+
+start_network
+
+set -x
+
+itself=$(client config new $(get_node_rpc))
+itself_pubkey=$(echo "$itself" | client config get-public-key)
+
+initial_balance=$(echo "$itself" | client get-balance)
+
+echo "$itself" |
+	client send-asset 1 "$itself_pubkey" 10
+wait_for_sequence "$itself" 1
+
+echo "$itself" |
+	client get-balance |
+	xargs test $initial_balance -eq
