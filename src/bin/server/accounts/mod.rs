@@ -3,6 +3,7 @@ use std::collections::HashMap;
 use drop::crypto::sign;
 use snafu::ResultExt;
 use tokio::sync::{mpsc, oneshot};
+use tracing::{debug, info, warn};
 
 mod account;
 use account::Account;
@@ -171,18 +172,34 @@ impl AccountsHandler {
         // TODO remove me when create_account is done
         let initial_account = Account::new();
 
-        let sender_account = self.ledger.get(&sender).unwrap_or(&initial_account);
-        let receiver_account = self.ledger.get(&receiver).unwrap_or(&initial_account);
+        if sender.eq(&receiver) {
+            warn!(?sender, "transfer to itself");
 
-        let new_sender_account = sender_account
-            .debit(sender_sequence, amount)
-            .context(AccountModification)?;
-        let new_receiver_account = receiver_account
-            .credit(amount)
-            .context(AccountModification)?;
+            let account = self.ledger.get(&sender).unwrap_or(&initial_account);
 
-        self.ledger.insert(sender, new_sender_account);
-        self.ledger.insert(receiver, new_receiver_account);
+            let new_account = account
+                .debit(sender_sequence, 0)
+                .context(AccountModification)?;
+
+            self.ledger.insert(sender, new_account);
+        } else {
+            let sender_account = self.ledger.get(&sender).unwrap_or(&initial_account);
+            let receiver_account = self.ledger.get(&receiver).unwrap_or(&initial_account);
+
+            debug!(?sender_account, ?receiver_account, "before transfer");
+
+            let new_sender_account = sender_account
+                .debit(sender_sequence, amount)
+                .context(AccountModification)?;
+            let new_receiver_account = receiver_account
+                .credit(amount)
+                .context(AccountModification)?;
+
+            info!(?new_sender_account, ?new_receiver_account, "after transfer");
+
+            self.ledger.insert(sender, new_sender_account);
+            self.ledger.insert(receiver, new_receiver_account);
+        }
 
         Ok(())
     }

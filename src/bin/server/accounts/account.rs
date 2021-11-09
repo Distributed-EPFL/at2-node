@@ -8,6 +8,7 @@ pub enum Error {
 }
 
 /// Contains the balance for a user
+#[derive(Debug)]
 pub struct Account {
     last_sequence: sieve::Sequence,
     balance: u64,

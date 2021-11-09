@@ -13,7 +13,7 @@ use sieve::SieveConfig;
 use snafu::{ResultExt, Snafu};
 use tokio::net;
 use tonic::Response;
-use tracing::warn;
+use tracing::{info, warn};
 
 use super::{
     accounts::{self, Accounts},
@@ -164,6 +164,8 @@ impl Service {
         &mut self,
         msg: &sieve::Payload<ThinTransaction>,
     ) -> Result<(), ProcessTransactionError> {
+        info!(tx=?msg.payload(), "new payload");
+
         let sender = Box::new(msg.sender().to_owned());
 
         self.accounts
