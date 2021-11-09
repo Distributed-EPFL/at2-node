@@ -1,16 +1,17 @@
-use std::net::SocketAddr;
+use std::fmt;
 
 use at2_node::{proto, ThinTransaction};
 use contagion::{Contagion, ContagionConfig, ContagionMessage};
 use drop::{
     crypto::key::exchange::{self, Exchanger},
-    net::{ConnectorExt, TcpConnector, TcpListener},
+    net::{ConnectorExt, ResolveConnector, TcpConnector, TcpListener},
     system::{AllSampler, Handle, NetworkSender, System, SystemManager},
 };
 use futures::{future, StreamExt};
 use murmur::MurmurConfig;
 use sieve::SieveConfig;
 use snafu::{ResultExt, Snafu};
+use tokio::net;
 use tonic::Response;
 use tracing::warn;
 
@@ -57,23 +58,27 @@ pub struct Service {
 
 impl Service {
     pub async fn new(
-        listener_addr: SocketAddr,
+        listener_addr: impl net::ToSocketAddrs + fmt::Display,
         network_keypair: exchange::KeyPair,
         network: Vec<config::Node>,
     ) -> Result<Self, Error> {
+        let network_size = network.len();
+
         let exchanger = Exchanger::new(network_keypair);
 
         let listener = TcpListener::new(listener_addr, exchanger.clone())
             .await
             .context(ServiceNew)?;
 
-        let (addrs, keys): (Vec<_>, Vec<_>) = network
-            .iter()
-            .map(|node| (node.address, node.public_key))
-            .unzip();
-        let connector = TcpConnector::new(exchanger).retry();
+        let connector = ResolveConnector::new(TcpConnector::new(exchanger)).retry();
         // TODO readd connections if dropped
-        let mut system = System::new_with_connector(&connector, keys, addrs).await;
+        let mut system = System::new_with_connector_zipped(
+            &connector,
+            network
+                .into_iter()
+                .map(|node| (node.public_key, node.address)),
+        )
+        .await;
 
         let listener_errors = system.add_listener(listener).await;
         tokio::spawn(async move {
@@ -91,15 +96,15 @@ impl Service {
             contagion::Fixed::new_local(),
             ContagionConfig {
                 sieve: SieveConfig {
-                    sieve_sample_size: network.len(),
-                    echo_threshold: network.len(),
+                    sieve_sample_size: network_size,
+                    echo_threshold: network_size,
                     murmur: MurmurConfig {
-                        murmur_gossip_size: network.len(),
+                        murmur_gossip_size: network_size,
                         ..Default::default()
                     },
                 },
-                contagion_sample_size: network.len(),
-                ready_threshold: network.len(),
+                contagion_sample_size: network_size,
+                ready_threshold: network_size,
             },
         );
 

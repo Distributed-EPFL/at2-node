@@ -40,6 +40,15 @@ fail() {
 	exit 1
 }
 
+wait_for_port_connect() {
+	local port=$1
+
+	while ! nc -w 0 localhost $port
+	do
+		sleep $tick
+	done
+}
+
 readonly port_base=$((RANDOM + 1024))
 readonly port_top=$((port_base + 2*node_count - 1))
 nodes=''
@@ -70,10 +79,7 @@ start_network() {
 
 	for port in $(seq $port_base $port_top)
 	do
-		while ! nc -w 0 localhost $port
-		do
-			sleep 0.1
-		done
+		wait_for_port_connect $port
 	done
 }
 
