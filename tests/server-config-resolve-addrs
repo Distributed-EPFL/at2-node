@@ -1,0 +1,13 @@
+#!/usr/bin/env bash
+
+source ./lib.sh
+
+server config new localhost:1024 localhost:1025 |
+	server run &
+
+wait_for_port_connect 1024
+wait_for_port_connect 1025
+
+kill $!
+
+wait

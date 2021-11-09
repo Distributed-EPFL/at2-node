@@ -1,12 +1,12 @@
-use std::{io, net::SocketAddr};
+use std::io;
 
 use drop::crypto::{key::exchange, sign};
 use snafu::{ResultExt, Snafu};
 
 #[derive(serde::Deserialize, serde::Serialize)]
 pub struct ConfigAddresses {
-    pub node: SocketAddr,
-    pub rpc: SocketAddr,
+    pub node: String,
+    pub rpc: String,
 }
 
 #[derive(serde::Deserialize, serde::Serialize)]
@@ -27,7 +27,7 @@ pub struct Config {
 
 #[derive(serde::Deserialize, serde::Serialize, Debug)]
 pub struct Node {
-    pub address: SocketAddr,
+    pub address: String,
     #[serde(with = "hex")]
     pub public_key: exchange::PublicKey,
 }

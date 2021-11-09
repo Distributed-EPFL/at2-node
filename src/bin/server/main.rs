@@ -1,9 +1,10 @@
-use std::{io, net::SocketAddr, process};
+use std::{io, process};
 
 use at2_node::proto;
 use drop::crypto::{key::exchange, sign};
-use snafu::{ResultExt, Snafu};
+use snafu::{OptionExt, ResultExt, Snafu};
 use structopt::StructOpt;
+use tokio::net;
 use tonic::transport::Server;
 use tracing::{subscriber, Level};
 use tracing_fmt::FmtSubscriber;
@@ -22,8 +23,8 @@ enum Commands {
 #[derive(Debug, StructOpt)]
 enum CommandsConfig {
     New {
-        node_address: SocketAddr,
-        rpc_address: SocketAddr,
+        node_address: String,
+        rpc_address: String,
     },
     GetNode,
 }
@@ -44,6 +45,10 @@ enum RunError {
 enum Error {
     #[snafu(display("config: {}", source))]
     Config { source: config::Error },
+    #[snafu(display("config: resolve host: {}", source))]
+    UnknownHost { source: io::Error },
+    #[snafu(display("config: no host resolved"))]
+    NoHost,
     #[snafu(display("run server: {}", source))]
     Run { source: RunError },
 }
@@ -107,7 +112,13 @@ async fn run() -> Result<(), Error> {
     Server::builder()
         .accept_http1(true)
         .add_service(web_config.enable(proto::at2_server::At2Server::new(service)))
-        .serve(config.addresses.rpc)
+        .serve(
+            net::lookup_host(config.addresses.rpc)
+                .await
+                .context(UnknownHost)?
+                .next()
+                .context(NoHost)?,
+        )
         .await
         .context(Rpc)
         .context(Run)?;
