@@ -72,7 +72,6 @@ start_network() {
 			node_config+=$'\n'$(echo "${configs[j]}" | server config get-node)
 		done
 
-		echo "$node_config"
 		echo "$node_config" | server run &
 		nodes+=" $!"
 	done
