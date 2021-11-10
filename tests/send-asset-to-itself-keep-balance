@@ -4,8 +4,6 @@ source ./lib.sh
 
 start_network
 
-set -x
-
 itself=$(client config new $(get_node_rpc))
 itself_pubkey=$(echo "$itself" | client config get-public-key)
 
