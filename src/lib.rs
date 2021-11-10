@@ -21,7 +21,7 @@ pub struct ThinTransaction {
 }
 
 /// Transaction when committed to memory
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Eq, PartialEq)]
 pub struct FullTransaction {
     /// When the transaction was stored
     pub timestamp: chrono::DateTime<chrono::Utc>,
