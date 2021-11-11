@@ -20,6 +20,17 @@ pub struct ThinTransaction {
     pub amount: u64,
 }
 
+/// What is the status of the transaction
+#[derive(Debug, Clone, Eq, PartialEq)]
+pub enum TransactionState {
+    /// Waiting for network confirmation
+    Pending,
+    /// Processed, committed
+    Success,
+    /// Unable to process it
+    Failure,
+}
+
 /// Transaction when committed to memory
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub struct FullTransaction {
@@ -27,20 +38,12 @@ pub struct FullTransaction {
     pub timestamp: chrono::DateTime<chrono::Utc>,
     /// User sending it
     pub sender: sign::PublicKey,
+    /// Sender sequence number
+    pub sender_sequence: sieve::Sequence,
     /// User receiving it
     pub recipient: sign::PublicKey,
     /// How many asset to send
     pub amount: u64,
-}
-
-impl FullTransaction {
-    /// Expend a [`ThinTransaction`] to a full one
-    pub fn with_thin(sender: sign::PublicKey, thin: ThinTransaction) -> Self {
-        Self {
-            timestamp: chrono::Utc::now(),
-            sender,
-            recipient: thin.recipient,
-            amount: thin.amount,
-        }
-    }
+    /// Processing status
+    pub state: TransactionState,
 }

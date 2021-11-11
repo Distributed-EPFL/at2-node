@@ -1,6 +1,9 @@
 use std::io::{stdin, stdout};
 
-use at2_node::client::{self, Client};
+use at2_node::{
+    client::{self, Client},
+    TransactionState,
+};
 use drop::crypto::sign;
 use hex::FromHex;
 use http::Uri;
@@ -134,8 +137,16 @@ async fn get_latest_transactions() -> Result<(), CommandError> {
         .iter()
         .for_each(|tx| {
             println!(
-                "{}: {} send {}¤ to {}",
-                tx.timestamp, tx.sender, tx.amount, tx.recipient,
+                "{}: {} send {}¤ to {} ({})",
+                tx.timestamp,
+                tx.sender,
+                tx.amount,
+                tx.recipient,
+                match tx.state {
+                    TransactionState::Pending => "pending",
+                    TransactionState::Success => "success",
+                    TransactionState::Failure => "failure",
+                },
             )
         });
 
