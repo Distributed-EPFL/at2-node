@@ -1,6 +1,9 @@
 use std::fmt;
 
-use at2_node::{proto, ThinTransaction};
+use at2_node::{
+    proto::{self, *},
+    ThinTransaction, TransactionState,
+};
 use contagion::{Contagion, ContagionConfig, ContagionMessage};
 use drop::{
     crypto::key::exchange::{self, Exchanger},
@@ -168,7 +171,8 @@ impl Service {
 
         let sender = Box::new(msg.sender().to_owned());
 
-        self.accounts
+        let processed = self
+            .accounts
             .transfer(
                 sender.clone(),
                 msg.sequence(),
@@ -176,14 +180,22 @@ impl Service {
                 msg.payload().amount,
             )
             .await
-            .context(ProcessTxForAccounts)?;
+            .context(ProcessTxForAccounts);
 
         self.recent_transactions
-            .put(sender, msg.payload().to_owned())
+            .update(
+                sender,
+                msg.sequence(),
+                if processed.is_ok() {
+                    TransactionState::Success
+                } else {
+                    TransactionState::Failure
+                },
+            )
             .await
             .context(ProcessTxForRecent)?;
 
-        Ok(())
+        processed
     }
 }
 
@@ -204,34 +216,42 @@ impl From<recent_transactions::Error> for tonic::Status {
 }
 
 #[tonic::async_trait]
-impl proto::at2_server::At2 for Service {
+impl at2_server::At2 for Service {
     async fn send_asset(
         &self,
-        request: tonic::Request<proto::SendAssetRequest>,
-    ) -> Result<tonic::Response<proto::SendAssetReply>, tonic::Status> {
+        request: tonic::Request<SendAssetRequest>,
+    ) -> Result<tonic::Response<SendAssetReply>, tonic::Status> {
         let message = request.into_inner();
+
+        let thin = at2_node::ThinTransaction {
+            recipient: bincode::deserialize(&message.recipient).context(Deserialize)?,
+            amount: message.amount,
+        };
+
+        let sender = bincode::deserialize(&message.sender).context(Deserialize)?;
+
+        self.recent_transactions
+            .put(Box::new(sender), message.sequence, thin.clone())
+            .await?;
 
         self.handle
             .clone()
             .broadcast(&sieve::Payload::new(
-                bincode::deserialize(&message.sender).context(Deserialize)?,
+                sender,
                 message.sequence,
-                at2_node::ThinTransaction {
-                    recipient: bincode::deserialize(&message.recipient).context(Deserialize)?,
-                    amount: message.amount,
-                },
+                thin,
                 bincode::deserialize(&message.signature).context(Deserialize)?,
             ))
             .await
-            .expect("broadcasting failed");
+            .map_err(|err| tonic::Status::invalid_argument(err.to_string()))?;
 
-        Ok(Response::new(proto::SendAssetReply {}))
+        Ok(Response::new(SendAssetReply {}))
     }
 
     async fn get_last_sequence(
         &self,
-        request: tonic::Request<proto::GetLastSequenceRequest>,
-    ) -> Result<tonic::Response<proto::GetLastSequenceReply>, tonic::Status> {
+        request: tonic::Request<GetLastSequenceRequest>,
+    ) -> Result<tonic::Response<GetLastSequenceReply>, tonic::Status> {
         let sequence = self
             .accounts
             .get_last_sequence(
@@ -239,14 +259,14 @@ impl proto::at2_server::At2 for Service {
             )
             .await?;
 
-        Ok(Response::new(proto::GetLastSequenceReply { sequence }))
+        Ok(Response::new(GetLastSequenceReply { sequence }))
     }
 
     async fn get_balance(
         &self,
-        request: tonic::Request<proto::GetBalanceRequest>,
-    ) -> Result<tonic::Response<proto::GetBalanceReply>, tonic::Status> {
-        Ok(Response::new(proto::GetBalanceReply {
+        request: tonic::Request<GetBalanceRequest>,
+    ) -> Result<tonic::Response<GetBalanceReply>, tonic::Status> {
+        Ok(Response::new(GetBalanceReply {
             amount: self
                 .accounts
                 .get_balance(bincode::deserialize(&request.get_ref().sender).context(Deserialize)?)
@@ -256,20 +276,28 @@ impl proto::at2_server::At2 for Service {
 
     async fn get_latest_transactions(
         &self,
-        _: tonic::Request<proto::GetLatestTransactionsRequest>,
-    ) -> Result<tonic::Response<proto::GetLatestTransactionsReply>, tonic::Status> {
-        Ok(Response::new(proto::GetLatestTransactionsReply {
+        _: tonic::Request<GetLatestTransactionsRequest>,
+    ) -> Result<tonic::Response<GetLatestTransactionsReply>, tonic::Status> {
+        use full_transaction::State;
+
+        Ok(Response::new(GetLatestTransactionsReply {
             transactions: self
                 .recent_transactions
                 .get_all()
                 .await?
                 .iter()
                 .map(|tx| {
-                    Ok(proto::ProcessedTransaction {
+                    Ok(proto::FullTransaction {
                         timestamp: tx.timestamp.to_rfc3339(),
                         sender: bincode::serialize(&tx.sender).context(Serialize)?,
+                        sender_sequence: tx.sender_sequence,
                         recipient: bincode::serialize(&tx.recipient).context(Serialize)?,
                         amount: tx.amount,
+                        state: match tx.state {
+                            TransactionState::Pending => State::Pending as i32,
+                            TransactionState::Success => State::Success as i32,
+                            TransactionState::Failure => State::Failure as i32,
+                        },
                     })
                 })
                 .collect::<Result<_, ProtoError>>()?,

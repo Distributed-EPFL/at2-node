@@ -31,14 +31,21 @@ message GetLastSequenceReply {
 	uint32 sequence = 1;
 }
 
-message ProcessedTransaction {
+message FullTransaction {
 	string timestamp = 1;
 	bytes sender = 2;
 	bytes recipient = 3;
 	uint64 amount = 4;
+	enum State {
+		Pending = 0;
+		Success = 1;
+		Failure = 2;
+	}
+	State state = 5;
+	uint32 sender_sequence = 6;
 }
 
 message GetLatestTransactionsRequest {}
 message GetLatestTransactionsReply {
-	repeated ProcessedTransaction transactions = 1;
+	repeated FullTransaction transactions = 1;
 }

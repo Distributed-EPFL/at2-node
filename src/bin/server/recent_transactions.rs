@@ -1,7 +1,8 @@
 use std::collections::VecDeque;
 
-use at2_node::{FullTransaction, ThinTransaction};
+use at2_node::{FullTransaction, ThinTransaction, TransactionState};
 use drop::crypto::sign;
+use snafu::ensure;
 use tokio::sync::{mpsc, oneshot};
 
 const LATEST_TRANSACTIONS_MAX_SIZE: usize = 10;
@@ -12,13 +13,23 @@ pub enum Error {
     GoneOnSend,
     #[snafu(display("gone on recv"))]
     GoneOnRecv,
+    PutAlreadyExisting,
 }
+
+type Result<T> = std::result::Result<T, Error>;
 
 #[derive(Debug)]
 enum Commands {
     Put {
-        thin: ThinTransaction,
         sender: Box<sign::PublicKey>,
+        sender_sequence: sieve::Sequence,
+        thin: ThinTransaction,
+        resp: oneshot::Sender<Result<()>>,
+    },
+    Update {
+        sender: Box<sign::PublicKey>,
+        sender_sequence: sieve::Sequence,
+        state: TransactionState,
         resp: oneshot::Sender<()>,
     },
     GetAll {
@@ -46,14 +57,38 @@ impl RecentTransactions {
     pub async fn put(
         &self,
         sender: Box<sign::PublicKey>,
+        sender_sequence: sieve::Sequence,
         thin: ThinTransaction,
-    ) -> Result<(), Error> {
+    ) -> Result<()> {
         let (tx, rx) = oneshot::channel();
 
         self.agent
             .send(Commands::Put {
                 sender,
+                sender_sequence,
                 thin,
+                resp: tx,
+            })
+            .await
+            .map_err(|_| Error::GoneOnSend)?;
+
+        rx.await.map_err(|_| Error::GoneOnRecv)?
+    }
+
+    /// Update an already put transaction, to resolve its state
+    pub async fn update(
+        &self,
+        sender: Box<sign::PublicKey>,
+        sender_sequence: sieve::Sequence,
+        state: TransactionState,
+    ) -> Result<()> {
+        let (tx, rx) = oneshot::channel();
+
+        self.agent
+            .send(Commands::Update {
+                sender,
+                sender_sequence,
+                state,
                 resp: tx,
             })
             .await
@@ -63,7 +98,7 @@ impl RecentTransactions {
     }
 
     /// Return the recently seen transactions
-    pub async fn get_all(&self) -> Result<Vec<FullTransaction>, Error> {
+    pub async fn get_all(&self) -> Result<Vec<FullTransaction>> {
         let (tx, rx) = oneshot::channel();
 
         self.agent
@@ -86,8 +121,21 @@ impl RecentTransactionsHandler {
         tokio::spawn(async move {
             while let Some(cmd) = rx.recv().await {
                 match cmd {
-                    Commands::Put { sender, thin, resp } => {
-                        self.put(*sender, thin);
+                    Commands::Put {
+                        sender,
+                        sender_sequence,
+                        thin,
+                        resp,
+                    } => {
+                        let _ = resp.send(self.put(*sender, sender_sequence, thin));
+                    }
+                    Commands::Update {
+                        sender,
+                        sender_sequence,
+                        state,
+                        resp,
+                    } => {
+                        self.update(*sender, sender_sequence, state);
                         let _ = resp.send(());
                     }
                     Commands::GetAll { resp } => {
@@ -100,12 +148,52 @@ impl RecentTransactionsHandler {
         tx
     }
 
-    fn put(&mut self, sender: sign::PublicKey, thin: ThinTransaction) {
+    fn put(
+        &mut self,
+        sender: sign::PublicKey,
+        sender_sequence: sieve::Sequence,
+        thin: ThinTransaction,
+    ) -> Result<()> {
+        ensure!(
+            !self
+                .0
+                .iter()
+                .any(|tx| tx.sender_sequence == sender_sequence && tx.sender == sender),
+            PutAlreadyExisting
+        );
+
+        let full = FullTransaction {
+            timestamp: chrono::Utc::now(),
+            sender,
+            sender_sequence,
+            recipient: thin.recipient,
+            amount: thin.amount,
+            state: TransactionState::Pending,
+        };
+
         if self.0.len() == LATEST_TRANSACTIONS_MAX_SIZE {
             self.0.pop_front();
         }
-        let full = FullTransaction::with_thin(sender, thin);
+
         self.0.push_back(full);
+
+        Ok(())
+    }
+
+    fn update(
+        &mut self,
+        sender: sign::PublicKey,
+        sender_sequence: sieve::Sequence,
+        state: TransactionState,
+    ) {
+        // NOP if not found as the transaction may resolve late
+        if let Some(tx) = self
+            .0
+            .iter_mut()
+            .find(|tx| tx.sender_sequence == sender_sequence && tx.sender == sender)
+        {
+            tx.state = state;
+        }
     }
 
     fn get_all(&self) -> Vec<FullTransaction> {
