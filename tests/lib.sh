@@ -49,11 +49,12 @@ wait_for_port_connect() {
 	done
 }
 
-readonly port_base=$((RANDOM + 1024))
-readonly port_top=$((port_base + 2*node_count - 1))
+declare port_base
 nodes=''
 start_network() {
 	[ -n "$nodes" ] && fail 'nodes already started'
+	port_base=${1:-$((RANDOM + 1024))}
+	local port_top=$((port_base + 2*node_count - 1))
 
 	local port configs=()
 
