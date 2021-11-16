@@ -1,0 +1,36 @@
+#!/usr/bin/env bash
+
+source ./lib.sh
+
+start_network
+
+sender=$(client config new $(get_node_rpc))
+recipient_pubkley=$(client config new $(get_node_rpc) |
+	client config get-public-key)
+
+echo "$sender" |
+	client send-asset 1 "$recipient_pubkley" 5
+sleep 1 # force new block
+echo "$sender" |
+	client send-asset 2 "$recipient_pubkley" 5
+wait_for_sequence "$sender" 2
+
+ensure_all_lines_match() {
+	local lines=$1
+	local match=$2
+
+	local lines_count=$(echo "$lines" | wc -l)
+
+	echo "$lines" |
+		grep "$match" |
+		wc -l |
+		xargs test $lines_count -eq
+}
+
+txs=$(client config new $(get_node_rpc) | client get-latest-transactions)
+
+[ "$(echo "$txs" | wc -l)" -eq 2 ]
+ensure_all_lines_match "$txs" "$(echo "$sender" | client config get-public-key)"
+ensure_all_lines_match "$txs" "$recipient_pubkley"
+ensure_all_lines_match "$txs" 5
+ensure_all_lines_match "$txs" success
