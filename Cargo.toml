@@ -35,12 +35,18 @@ num_cpus = { version = "1.13", optional = true }
 tonic-web = { version = "0.2", optional = true }
 tracing = { version = "0.1", optional = true }
 tracing-fmt = { version = "0.1", optional = true }
+tracing-futures = { version = "0.2", optional = true }
+tracing-subscriber = "0.3"
+
+rand = "0.8.0"
+
 
 [target.'cfg(not(target_family = "wasm"))'.dependencies]
 tonic = { version = "0.6", default-features = false, features = ["transport"] }
 
 [target.'cfg(target_family = "wasm")'.dependencies]
 grpc-web-client = { git = "https://github.com/titanous/grpc-web-client", branch = "main" }
+
 
 [dev-dependencies]
 duct = "0.13"
