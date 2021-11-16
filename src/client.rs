@@ -14,6 +14,7 @@ use crate::{
 pub enum Error {
     /// Connecting to the server
     #[cfg(not(target_family = "wasm"))]
+    #[snafu(display("transport to the server: {}", source))]
     Transport {
         /// Source of the error
         source: tonic::transport::Error,
@@ -29,13 +30,14 @@ pub enum Error {
         source: chrono::ParseError,
     },
     /// Deserializing the transaction state
-    DeserializeState {},
+    DeserializeState,
     /// Serializing the server's query
     Serialize {
         /// Source of the error
         source: bincode::Error,
     },
     /// Communicating with the server
+    #[snafu(display("commnucating with the server: {}", source))]
     Rpc {
         /// Source of the error
         source: tonic::Status,
