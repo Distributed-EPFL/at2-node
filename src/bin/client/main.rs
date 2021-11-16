@@ -85,7 +85,6 @@ async fn send_asset(
     let config = config::from_reader(stdin()).context(ReadConfig)?;
 
     Client::new(config.rpc_address)
-        .context(ClientError)?
         .send_asset(
             &sign::KeyPair::from(config.private_key),
             sequence,
@@ -102,7 +101,6 @@ async fn get_balance() -> Result<(), CommandError> {
     let config = config::from_reader(stdin()).context(ReadConfig)?;
 
     let amount = Client::new(config.rpc_address)
-        .context(ClientError)?
         .get_balance(&sign::KeyPair::from(config.private_key).public())
         .await
         .context(ClientError)?;
@@ -116,7 +114,6 @@ async fn get_last_sequence() -> Result<(), CommandError> {
     let config = config::from_reader(stdin()).context(ReadConfig)?;
 
     let sequence = Client::new(config.rpc_address)
-        .context(ClientError)?
         .get_last_sequence(&sign::KeyPair::from(config.private_key).public())
         .await
         .context(ClientError)?;
@@ -130,7 +127,6 @@ async fn get_latest_transactions() -> Result<(), CommandError> {
     let config = config::from_reader(stdin()).context(ReadConfig)?;
 
     Client::new(config.rpc_address)
-        .context(ClientError)?
         .get_latest_transactions()
         .await
         .context(ClientError)?
