@@ -34,7 +34,7 @@ server run < server-config
 
 ```bash
 # generate a client config
-client config new http://127.0.0.1:3001 > client-config
+client config new http://127.0.0.1:3002 > client-config
 
 # get the recipient public key
 recipient=0123456789abcdef
