@@ -173,7 +173,7 @@ impl AccountsHandler {
         let initial_account = Account::new();
 
         if sender.eq(&receiver) {
-            warn!(?sender, "transfer to itself");
+            warn!(?sender, "transfer to themself");
 
             let account = self.ledger.get(&sender).unwrap_or(&initial_account);
 
@@ -208,7 +208,67 @@ impl AccountsHandler {
         if let Some(sender_account) = self.ledger.get(&sender) {
             sender_account.last_sequence()
         } else {
-            sieve::Sequence::default()
+            0
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn new_account_is_the_same_as_unknown_account() {
+        let accounts = Accounts::new();
+        let user_pubkey = Box::new(sign::KeyPair::random().public());
+
+        let new_account = Account::new();
+
+        assert_eq!(
+            accounts
+                .get_balance(user_pubkey.clone())
+                .await
+                .expect("to get balance"),
+            new_account.balance(),
+        );
+        assert_eq!(
+            accounts
+                .get_last_sequence(user_pubkey)
+                .await
+                .expect("to get last sequence"),
+            new_account.last_sequence(),
+        );
+    }
+
+    #[tokio::test]
+    async fn transfer_to_themself_increment_sequence_and_keep_balance() {
+        let accounts = Accounts::new();
+        let user_pubkey = Box::new(sign::KeyPair::random().public());
+
+        let initial_balance = accounts
+            .get_balance(user_pubkey.clone())
+            .await
+            .expect("to get initial balance");
+        let initial_sequence = accounts
+            .get_last_sequence(user_pubkey.clone())
+            .await
+            .expect("to get initial sequence");
+
+        accounts
+            .transfer(user_pubkey.clone(), 1, user_pubkey.clone(), 10)
+            .await
+            .expect("to transfer to themself");
+
+        let final_balance = accounts
+            .get_balance(user_pubkey.clone())
+            .await
+            .expect("to get final balance");
+        let final_sequence = accounts
+            .get_last_sequence(user_pubkey)
+            .await
+            .expect("to get final sequence");
+
+        assert_eq!(initial_balance, final_balance);
+        assert!(initial_sequence < final_sequence);
     }
 }
