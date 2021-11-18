@@ -14,12 +14,14 @@ pub struct Account {
     balance: u64,
 }
 
+const INITIAL_BALANCE: u64 = 10;
+
 impl Account {
     /// Create a new account
     pub fn new() -> Self {
         Self {
             last_sequence: sieve::Sequence::MIN,
-            balance: 10, // TODO create faucet
+            balance: INITIAL_BALANCE, // TODO create faucet
         }
     }
 
@@ -49,5 +51,37 @@ impl Account {
     /// Return the owned amount
     pub fn balance(&self) -> u64 {
         self.balance
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn debit_too_much_fails() {
+        let account = Account::new();
+
+        account
+            .debit(1, INITIAL_BALANCE + 1)
+            .expect_err("able to debit more than possessed");
+    }
+
+    #[test]
+    fn debit_increase_sequence() {
+        let account = Account::new();
+
+        let new_accout = account.debit(1, 1).expect("to debit account");
+
+        assert!(account.last_sequence() < new_accout.last_sequence());
+    }
+
+    #[test]
+    fn credit_doesnt_change_sequence() {
+        let account = Account::new();
+
+        let new_accout = account.credit(1).expect("to credit account");
+
+        assert_eq!(account.last_sequence(), new_accout.last_sequence());
     }
 }

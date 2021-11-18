@@ -200,3 +200,51 @@ impl RecentTransactionsHandler {
         self.0.clone().into()
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn put_transactions_show_in_get_all() {
+        let recent_transactions = RecentTransactions::new();
+
+        let sender = sign::KeyPair::random().public();
+        let recipient = sign::KeyPair::random().public();
+
+        let txs = [
+            ThinTransaction {
+                amount: 10,
+                recipient,
+            },
+            ThinTransaction {
+                amount: 3,
+                recipient: sender,
+            },
+        ];
+
+        for (tx, seq) in txs.iter().zip(1..) {
+            recent_transactions
+                .put(Box::new(sender), seq, tx.clone())
+                .await
+                .expect("to put transaction");
+        }
+
+        let recent_txs = recent_transactions
+            .get_all()
+            .await
+            .expect("to get recent txs");
+
+        assert_eq!(txs.len(), recent_txs.len());
+        txs.iter()
+            .zip(recent_txs.iter())
+            .zip(1..)
+            .for_each(|((thin, full), seq)| {
+                assert_eq!(sender, full.sender);
+                assert_eq!(seq, full.sender_sequence);
+                assert_eq!(thin.amount, full.amount);
+                assert_eq!(thin.recipient, full.recipient);
+                assert_eq!(TransactionState::Pending, full.state);
+            });
+    }
+}
