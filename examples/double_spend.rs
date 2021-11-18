@@ -21,8 +21,8 @@ use tracing_subscriber;
 use structopt::StructOpt;
 use rand::{thread_rng, Rng};
 
-const CLIENT_BIN: &str = "/home/mhadji/research/at2/at2-node/target/debug/client";
-const SERVER_BIN: &str = "/home/mhadji/research/at2/at2-node/target/debug/server";
+const CLIENT_BIN: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/target/debug/client");
+const SERVER_BIN: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/target/debug/server");
 
 const TICK: Duration = Duration::from_millis(100);
 const TIMEOUT: Duration = Duration::from_secs(10);
