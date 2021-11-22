@@ -173,7 +173,7 @@ impl AccountsHandler {
         let initial_account = Account::new();
 
         if sender.eq(&receiver) {
-            warn!(?sender, "transfer to themself");
+            warn!(?sender, "transfer to itself");
 
             let account = self.ledger.get(&sender).unwrap_or(&initial_account);
 
@@ -241,7 +241,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn transfer_to_themself_increment_sequence_and_keep_balance() {
+    async fn transfer_to_themselves_increment_sequence_and_keep_balance() {
         let accounts = Accounts::new();
         let user_pubkey = Box::new(sign::KeyPair::random().public());
 
@@ -257,7 +257,7 @@ mod tests {
         accounts
             .transfer(user_pubkey.clone(), 1, user_pubkey.clone(), 10)
             .await
-            .expect("to transfer to themself");
+            .expect("to transfer to themselves");
 
         let final_balance = accounts
             .get_balance(user_pubkey.clone())
