@@ -5,7 +5,7 @@ use snafu::ResultExt;
 use tokio::sync::{mpsc, oneshot};
 use tracing::{debug, info, warn};
 
-mod account;
+pub mod account;
 use account::Account;
 
 #[derive(snafu::Snafu, Debug)]
