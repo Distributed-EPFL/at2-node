@@ -13,6 +13,7 @@ pub mod proto;
 
 /// Type of message sent via sieve
 #[drop::message]
+#[derive(PartialEq, Eq, PartialOrd, Ord)]
 pub struct ThinTransaction {
     /// User receiving the amount
     pub recipient: sign::PublicKey,
