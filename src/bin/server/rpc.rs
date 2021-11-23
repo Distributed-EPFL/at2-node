@@ -1,4 +1,4 @@
-use std::fmt;
+use std::{cmp::Reverse, collections::BinaryHeap, fmt};
 
 use at2_node::{
     proto::{self, *},
@@ -6,7 +6,10 @@ use at2_node::{
 };
 use contagion::{Contagion, ContagionConfig, ContagionMessage};
 use drop::{
-    crypto::key::exchange::{self, Exchanger},
+    crypto::{
+        key::exchange::{self, Exchanger},
+        sign,
+    },
     net::{ConnectorExt, ResolveConnector, TcpConnector, TcpListener},
     system::{AllSampler, Handle, NetworkSender, System, SystemManager},
 };
@@ -19,7 +22,7 @@ use tonic::Response;
 use tracing::{info, warn};
 
 use super::{
-    accounts::{self, Accounts},
+    accounts::{self, account, Accounts},
     config,
     recent_transactions::{self, RecentTransactions},
 };
@@ -140,6 +143,8 @@ impl Service {
         let mut service = self.clone();
 
         tokio::spawn(async move {
+            let mut to_process = BinaryHeap::new();
+
             loop {
                 match service.handle.deliver().await {
                     Err(contagion::ContagionError::Channel) => break,
@@ -148,36 +153,59 @@ impl Service {
                         continue;
                     }
                     Ok(batch) => {
-                        for payload in batch.iter() {
-                            if let Err(err) = service
-                                .process_payload(payload)
-                                .await
-                                .context(ProcessTransaction)
+                        batch.iter().for_each(|msg| {
+                            to_process.push(Reverse((
+                                msg.sequence(),
+                                msg.sender().to_owned(),
+                                msg.payload().to_owned(),
+                            )))
+                        });
+                    }
+                };
+
+                // dirty way to process all transactions
+                let mut previous_len = usize::MAX;
+                while to_process.len() < previous_len {
+                    previous_len = to_process.len();
+
+                    let mut remaining_to_process = BinaryHeap::new();
+                    while let Some(msg) = to_process.pop() {
+                        if let Err(err) = service.process_payload(msg.0.clone()).await {
+                            // retry only inconsecutive sequence
+                            if let ProcessTransactionError::ProcessTxForAccounts {
+                                source:
+                                    accounts::Error::AccountModification {
+                                        source: account::Error::InconsecutiveSequence,
+                                    },
+                            } = err
                             {
+                                remaining_to_process.push(msg);
+                            } else {
                                 warn!("{}", err);
                             }
                         }
                     }
-                };
+                    to_process.append(&mut remaining_to_process);
+                }
             }
         });
     }
 
     async fn process_payload(
         &mut self,
-        msg: &sieve::Payload<ThinTransaction>,
+        (sequence, sender, payload): (sieve::Sequence, sign::PublicKey, ThinTransaction),
     ) -> Result<(), ProcessTransactionError> {
-        info!(tx=?msg.payload(), "new payload");
+        info!(sequence, ?sender, tx=?payload, "new payload");
 
-        let sender = Box::new(msg.sender().to_owned());
+        let sender = Box::new(sender);
 
         let processed = self
             .accounts
             .transfer(
                 sender.clone(),
-                msg.sequence(),
-                Box::new(msg.payload().recipient),
-                msg.payload().amount,
+                sequence,
+                Box::new(payload.recipient),
+                payload.amount,
             )
             .await
             .context(ProcessTxForAccounts);
@@ -185,7 +213,7 @@ impl Service {
         self.recent_transactions
             .update(
                 sender,
-                msg.sequence(),
+                sequence,
                 if processed.is_ok() {
                     TransactionState::Success
                 } else {
