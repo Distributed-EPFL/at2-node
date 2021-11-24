@@ -2,9 +2,8 @@
 name = "at2-node"
 version = "0.1.0"
 authors = ["Ogier Bouvier <ogier@bouvier.family>", "Valérian Rousset <tharvik@users.noreply.github.com>"]
-edition = "2018"
+edition = "2021"
 license = "AGPL-3.0-only"
-resolver = "2"
 
 [dependencies]
 drop = { git = "https://github.com/Distributed-EPFL/drop" }
