@@ -14,7 +14,7 @@ pub struct Account {
     balance: u64,
 }
 
-const INITIAL_BALANCE: u64 = 10;
+const INITIAL_BALANCE: u64 = 100000;
 
 impl Account {
     /// Create a new account
