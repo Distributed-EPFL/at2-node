@@ -1,4 +1,9 @@
-use std::{cmp::Reverse, collections::BinaryHeap, fmt};
+use std::{
+    cmp::Reverse,
+    collections::BinaryHeap,
+    fmt,
+    time::{Duration, Instant},
+};
 
 use at2_node::{
     proto::{self, *},
@@ -22,10 +27,12 @@ use tonic::Response;
 use tracing::{info, warn};
 
 use super::{
-    accounts::{self, account, Accounts},
+    accounts::{self, Accounts},
     config,
     recent_transactions::{self, RecentTransactions},
 };
+
+const TRANSACTION_TTL: Duration = Duration::from_secs(60);
 
 #[derive(Snafu, Debug)]
 pub enum ProtoError {
@@ -155,9 +162,12 @@ impl Service {
                     Ok(batch) => {
                         batch.iter().for_each(|msg| {
                             to_process.push(Reverse((
-                                msg.sequence(),
-                                msg.sender().to_owned(),
-                                msg.payload().to_owned(),
+                                (
+                                    msg.sequence(),
+                                    msg.sender().to_owned(),
+                                    msg.payload().to_owned(),
+                                ),
+                                Instant::now(),
                             )))
                         });
                     }
@@ -168,24 +178,33 @@ impl Service {
                 while to_process.len() < previous_len {
                     previous_len = to_process.len();
 
-                    let mut remaining_to_process = BinaryHeap::new();
-                    while let Some(msg) = to_process.pop() {
-                        if let Err(err) = service.process_payload(msg.0.clone()).await {
-                            // retry only inconsecutive sequence
+                    let mut remaining_to_process = BinaryHeap::with_capacity(to_process.len());
+                    for Reverse((msg, when_added)) in to_process.into_sorted_vec() {
+                        if when_added.elapsed() > TRANSACTION_TTL {
+                            warn!("dropping too old: {:?}", msg);
+
+                            if let Err(err) = service
+                                .recent_transactions
+                                .update(Box::new(msg.1), msg.0, TransactionState::Failure)
+                                .await
+                            {
+                                warn!("unable to process: {}", err);
+                            }
+                        }
+
+                        if let Err(err) = service.process_payload(msg.clone()).await {
+                            // retry only account async failures
                             if let ProcessTransactionError::ProcessTxForAccounts {
-                                source:
-                                    accounts::Error::AccountModification {
-                                        source: account::Error::InconsecutiveSequence,
-                                    },
+                                source: accounts::Error::AccountModification { .. },
                             } = err
                             {
-                                remaining_to_process.push(msg);
+                                remaining_to_process.push(Reverse((msg, when_added)));
                             } else {
-                                warn!("{}", err);
+                                warn!("unable to process: {}", err);
                             }
                         }
                     }
-                    to_process.append(&mut remaining_to_process);
+                    to_process = remaining_to_process;
                 }
             }
         });
@@ -199,8 +218,7 @@ impl Service {
 
         let sender = Box::new(sender);
 
-        let processed = self
-            .accounts
+        self.accounts
             .transfer(
                 sender.clone(),
                 sequence,
@@ -208,22 +226,14 @@ impl Service {
                 payload.amount,
             )
             .await
-            .context(ProcessTxForAccounts);
+            .context(ProcessTxForAccounts)?;
 
         self.recent_transactions
-            .update(
-                sender,
-                sequence,
-                if processed.is_ok() {
-                    TransactionState::Success
-                } else {
-                    TransactionState::Failure
-                },
-            )
+            .update(sender, sequence, TransactionState::Success)
             .await
             .context(ProcessTxForRecent)?;
 
-        processed
+        Ok(())
     }
 }
 
