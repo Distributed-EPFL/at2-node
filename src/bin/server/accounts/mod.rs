@@ -175,30 +175,30 @@ impl AccountsHandler {
         if sender.eq(&receiver) {
             warn!(?sender, "transfer to itself");
 
-            let account = self.ledger.get(&sender).unwrap_or(&initial_account);
+            let account = self.ledger.entry(sender).or_insert(initial_account);
 
-            let new_account = account
+            account
                 .debit(sender_sequence, 0)
                 .context(AccountModification)?;
-
-            self.ledger.insert(sender, new_account);
         } else {
-            let sender_account = self.ledger.get(&sender).unwrap_or(&initial_account);
-            let receiver_account = self.ledger.get(&receiver).unwrap_or(&initial_account);
+            let mut sender_account = *self.ledger.get(&sender).unwrap_or(&initial_account);
+            let mut receiver_account = *self.ledger.get(&receiver).unwrap_or(&initial_account);
 
             debug!(?sender_account, ?receiver_account, "before transfer");
 
-            let new_sender_account = sender_account
+            let sender_res = sender_account
                 .debit(sender_sequence, amount)
-                .context(AccountModification)?;
-            let new_receiver_account = receiver_account
+                .context(AccountModification);
+            self.ledger.insert(sender, sender_account);
+
+            sender_res?;
+
+            receiver_account
                 .credit(amount)
                 .context(AccountModification)?;
+            self.ledger.insert(receiver, receiver_account);
 
-            info!(?new_sender_account, ?new_receiver_account, "after transfer");
-
-            self.ledger.insert(sender, new_sender_account);
-            self.ledger.insert(receiver, new_receiver_account);
+            info!(?sender_account, ?receiver_account, "after transfer");
         }
 
         Ok(())
@@ -217,6 +217,22 @@ impl AccountsHandler {
 mod tests {
     use super::*;
 
+    async fn get_balance_and_sequence(
+        accounts: &Accounts,
+        user_pubkey: Box<sign::PublicKey>,
+    ) -> (u64, sieve::Sequence) {
+        (
+            accounts
+                .get_balance(user_pubkey.clone())
+                .await
+                .expect("to get balance"),
+            accounts
+                .get_last_sequence(user_pubkey)
+                .await
+                .expect("to get last sequence"),
+        )
+    }
+
     #[tokio::test]
     async fn new_account_is_the_same_as_unknown_account() {
         let accounts = Accounts::new();
@@ -224,20 +240,10 @@ mod tests {
 
         let new_account = Account::new();
 
-        assert_eq!(
-            accounts
-                .get_balance(user_pubkey.clone())
-                .await
-                .expect("to get balance"),
-            new_account.balance(),
-        );
-        assert_eq!(
-            accounts
-                .get_last_sequence(user_pubkey)
-                .await
-                .expect("to get last sequence"),
-            new_account.last_sequence(),
-        );
+        let (balance, sequence) = get_balance_and_sequence(&accounts, user_pubkey).await;
+
+        assert_eq!(balance, new_account.balance(),);
+        assert_eq!(sequence, new_account.last_sequence(),);
     }
 
     #[tokio::test]
@@ -245,30 +251,51 @@ mod tests {
         let accounts = Accounts::new();
         let user_pubkey = Box::new(sign::KeyPair::random().public());
 
-        let initial_balance = accounts
-            .get_balance(user_pubkey.clone())
-            .await
-            .expect("to get initial balance");
-        let initial_sequence = accounts
-            .get_last_sequence(user_pubkey.clone())
-            .await
-            .expect("to get initial sequence");
+        let (initial_balance, initial_sequence) =
+            get_balance_and_sequence(&accounts, user_pubkey.clone()).await;
 
         accounts
             .transfer(user_pubkey.clone(), 1, user_pubkey.clone(), 10)
             .await
             .expect("to transfer to themselves");
 
-        let final_balance = accounts
-            .get_balance(user_pubkey.clone())
-            .await
-            .expect("to get final balance");
-        let final_sequence = accounts
-            .get_last_sequence(user_pubkey)
-            .await
-            .expect("to get final sequence");
+        let (final_balance, final_sequence) =
+            get_balance_and_sequence(&accounts, user_pubkey).await;
 
         assert_eq!(initial_balance, final_balance);
         assert!(initial_sequence < final_sequence);
+    }
+
+    #[tokio::test]
+    async fn transfer_too_much_fails_and_increases_sequence() {
+        let accounts = Accounts::new();
+        let first_user_pubkey = Box::new(sign::KeyPair::random().public());
+        let second_user_pubkey = Box::new(sign::KeyPair::random().public());
+
+        let (first_initial_balance, first_initial_sequence) =
+            get_balance_and_sequence(&accounts, first_user_pubkey.clone()).await;
+        let (second_initial_balance, second_initial_sequence) =
+            get_balance_and_sequence(&accounts, second_user_pubkey.clone()).await;
+
+        accounts
+            .transfer(
+                first_user_pubkey.clone(),
+                1,
+                second_user_pubkey.clone(),
+                first_initial_balance + 1,
+            )
+            .await
+            .expect_err("to fail to transfer");
+
+        let (first_final_balance, first_final_sequence) =
+            get_balance_and_sequence(&accounts, first_user_pubkey).await;
+        let (second_final_balance, second_final_sequence) =
+            get_balance_and_sequence(&accounts, second_user_pubkey).await;
+
+        assert_eq!(first_initial_balance, first_final_balance);
+        assert!(first_initial_sequence < first_final_sequence,);
+
+        assert_eq!(second_initial_balance, second_final_balance);
+        assert_eq!(second_initial_sequence, second_final_sequence,);
     }
 }
