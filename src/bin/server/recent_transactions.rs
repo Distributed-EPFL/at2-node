@@ -2,7 +2,6 @@ use std::collections::VecDeque;
 
 use at2_node::{FullTransaction, ThinTransaction, TransactionState};
 use drop::crypto::sign;
-use snafu::ensure;
 use tokio::sync::{mpsc, oneshot};
 
 const LATEST_TRANSACTIONS_MAX_SIZE: usize = 10;
@@ -13,7 +12,6 @@ pub enum Error {
     GoneOnSend,
     #[snafu(display("gone on recv"))]
     GoneOnRecv,
-    PutAlreadyExisting,
 }
 
 type Result<T> = std::result::Result<T, Error>;
@@ -154,13 +152,14 @@ impl RecentTransactionsHandler {
         sender_sequence: sieve::Sequence,
         thin: ThinTransaction,
     ) -> Result<()> {
-        ensure!(
-            !self
-                .0
-                .iter()
-                .any(|tx| tx.sender_sequence == sender_sequence && tx.sender == sender),
-            PutAlreadyExisting
-        );
+        // NOP if already existing
+        if self
+            .0
+            .iter()
+            .any(|tx| tx.sender_sequence == sender_sequence && tx.sender == sender)
+        {
+            return Ok(());
+        }
 
         let full = FullTransaction {
             timestamp: chrono::Utc::now(),
@@ -190,7 +189,7 @@ impl RecentTransactionsHandler {
         if let Some(tx) = self
             .0
             .iter_mut()
-            .find(|tx| tx.sender_sequence == sender_sequence && tx.sender == sender)
+            .rfind(|tx| tx.sender_sequence == sender_sequence && tx.sender == sender)
         {
             tx.state = state;
         }
